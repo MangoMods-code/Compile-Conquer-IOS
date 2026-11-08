@@ -17,6 +17,9 @@ generated levels. Campaigns are per programming language; Python is first.
 - Difficulty ramps inside every language campaign: each one starts gentle at the Farm, and every
   world after it (Warehouse, Mars Mine, Ocean, Rail Yard, ...) and every level within a world gets
   progressively harder. Each new language restarts that ramp from the Farm; languages are not ranked.
+- Stars: 3★ limit is computed per generated map by `Core/ParSolver.swift` (the straightforward
+  solution's tick count), 2★ adds a buffer. The Farm should be forgiving; later worlds can use
+  tighter limits (e.g. based on optimized solutions) so each world is harder than the last.
 - Every level's main.py starts with a locked setup that declares every variable and defines every
   command with its real body (`Core/FarmSetup.swift`). Keep those bodies in sync with `FarmWorld`.
   Starter code and briefs point at the setup instead of naming the answer.

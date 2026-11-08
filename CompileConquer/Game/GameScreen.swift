@@ -55,7 +55,7 @@ struct GameScreen: View {
             }
             Spacer(minLength: 4)
             stat(icon: "leaf.fill", text: "\(session.wheat)/\(session.level.goal)", color: Theme.gold)
-            stat(icon: "clock", text: "\(session.world.ticks)", color: Theme.text)
+            stat(icon: "clock", text: "\(session.world.ticks)/\(session.threeStarTicks)", color: session.world.ticks > session.threeStarTicks ? Theme.danger : Theme.text)
             Menu {
                 Button { session.newMap() } label: { Label("New map", systemImage: "dice") }
                     .disabled(session.state.isActive)
@@ -87,7 +87,7 @@ struct GameScreen: View {
             VStack(spacing: 10) {
                 Text("LEVEL COMPLETE").font(Theme.mono(16, .heavy)).foregroundStyle(Theme.accent)
                 StarsView(count: stars, size: 26)
-                Text("\(ticks) ticks  ·  ★★★ at \(session.level.threeStarTicks) or less")
+                Text("\(ticks) ticks  ·  ★★★ at \(session.threeStarTicks) or less")
                     .font(Theme.mono(11)).foregroundStyle(Theme.dim)
                 HStack(spacing: 8) {
                     Button("Replay") { session.dismissResult() }

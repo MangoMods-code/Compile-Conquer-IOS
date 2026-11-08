@@ -14,7 +14,8 @@ struct LevelSpec: Identifiable, Hashable {
     let ponds: Int
     let growTime: Int
     let goal: Int
-    /// Ticks needed for 3 and 2 stars. Finishing at all is 1 star.
+    /// Fallback tick limits for 3 and 2 stars, used only if a map can't be solved automatically.
+    /// Normally the limits come from ParSolver for each generated map (see GameSession).
     let threeStarTicks: Int
     let twoStarTicks: Int
     /// Drone commands this level unlocks (defined in the locked setup at the top of main.py).
@@ -61,8 +62,8 @@ enum FarmChapter {
             id: "py.farm.2", number: 2, title: "Getting Around",
             brief: "Harvest 2 Wheat. The soil isn't under the drone this time. A new def in the setup can help.",
             hint: "move(direction) changes drone.x or drone.y by 1. North is up, East is right.",
-            width: 4, height: 4, soilPlots: 2, rocks: 0, ponds: 0, growTime: 3, goal: 2,
-            threeStarTicks: 10, twoStarTicks: 14,
+            width: 4, height: 4, soilPlots: 2, rocks: 0, ponds: 0, growTime: 2, goal: 2,
+            threeStarTicks: 12, twoStarTicks: 18,
             commands: ["move", "plant", "wait", "harvest"],
             starterCode: """
             # New in the setup: directions and one new
@@ -75,8 +76,8 @@ enum FarmChapter {
             id: "py.farm.3", number: 3, title: "Break New Ground",
             brief: "Harvest 2 Wheat. There's no soil anywhere. Look at plant(): what does it need?",
             hint: "till() turns grass into soil. Plant both tiles before waiting so they grow together.",
-            width: 4, height: 4, soilPlots: 0, rocks: 1, ponds: 0, growTime: 3, goal: 2,
-            threeStarTicks: 9, twoStarTicks: 13,
+            width: 4, height: 4, soilPlots: 0, rocks: 1, ponds: 0, growTime: 2, goal: 2,
+            threeStarTicks: 12, twoStarTicks: 18,
             commands: ["move", "till", "plant", "wait", "harvest"],
             starterCode: """
             # plant() only works when tile.ground is
@@ -88,8 +89,8 @@ enum FarmChapter {
             id: "py.farm.4", number: 4, title: "Water Works",
             brief: "Harvest 3 Wheat. GROW_TIME is high on this level. Read tick() to see what speeds crops up.",
             hint: "water() sets tile.wet, and tick() ages wet crops by 2. Plant, then water each tile.",
-            width: 5, height: 5, soilPlots: 3, rocks: 2, ponds: 1, growTime: 6, goal: 3,
-            threeStarTicks: 18, twoStarTicks: 26,
+            width: 5, height: 5, soilPlots: 3, rocks: 1, ponds: 1, growTime: 4, goal: 3,
+            threeStarTicks: 20, twoStarTicks: 30,
             commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
             # Check GROW_TIME in the setup. Waiting
@@ -102,8 +103,8 @@ enum FarmChapter {
             id: "py.farm.5", number: 5, title: "Rocky Field",
             brief: "Harvest 4 Wheat on a rocky field. Plan a route around the rocks.",
             hint: "Rocks and ponds block the drone. Hit New Map if this layout is too nasty.",
-            width: 6, height: 6, soilPlots: 4, rocks: 5, ponds: 1, growTime: 5, goal: 4,
-            threeStarTicks: 24, twoStarTicks: 32,
+            width: 6, height: 6, soilPlots: 4, rocks: 3, ponds: 1, growTime: 3, goal: 4,
+            threeStarTicks: 30, twoStarTicks: 45,
             commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
             # Four plots, rocks and a pond. Every

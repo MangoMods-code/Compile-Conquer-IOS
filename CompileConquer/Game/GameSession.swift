@@ -25,6 +25,8 @@ final class GameSession: ObservableObject {
     let scene: FarmScene
 
     @Published private(set) var seed: UInt64
+    /// Ticks for 3 stars on this exact map: what the straightforward solution takes.
+    @Published private(set) var threeStarTicks: Int
     @Published private(set) var world: FarmWorld
     @Published var code: String {
         didSet { GameProgress.shared.saveCode(code, for: level) }
@@ -51,13 +53,19 @@ final class GameSession: ObservableObject {
         let w = LevelGenerator.make(level, seed: s)
         self.startWorld = w
         self.world = w
+        self.threeStarTicks = ParSolver.straightforwardTicks(w, spec: level) ?? level.threeStarTicks
         self.code = GameProgress.shared.code(for: level)
         self.scene = FarmScene(size: CGSize(width: 400, height: 400))
         scene.load(w)
-        log("Map \(SeedCode.format(s)) ready. Goal: \(level.goal) Wheat.", .info)
+        log("Map \(SeedCode.format(s)) ready. Goal: \(level.goal) Wheat. ★★★ at \(threeStarTicks) ticks or less.", .info)
     }
 
     var seedText: String { SeedCode.format(seed) }
+
+    /// 2 stars gets a generous buffer above the 3-star limit.
+    var twoStarTicks: Int { threeStarTicks + max(4, threeStarTicks / 2) }
+
+    func stars(forTicks t: Int) -> Int { t <= threeStarTicks ? 3 : (t <= twoStarTicks ? 2 : 1) }
 
     /// The whole main.py: the locked header (imports) plus the player's code.
     var fullText: String { level.header + code }
@@ -116,8 +124,9 @@ final class GameSession: ObservableObject {
     func newMap() {
         seed = SeedCode.random()
         startWorld = LevelGenerator.make(level, seed: seed)
+        threeStarTicks = ParSolver.straightforwardTicks(startWorld, spec: level) ?? level.threeStarTicks
         reset()
-        log("New map \(SeedCode.format(seed)).", .info)
+        log("New map \(SeedCode.format(seed)). ★★★ at \(threeStarTicks) ticks or less.", .info)
     }
 
     func restoreStarterCode() {
@@ -202,7 +211,7 @@ final class GameSession: ObservableObject {
         }
 
         if wheat >= level.goal {
-            let stars = level.stars(forTicks: world.ticks)
+            let stars = stars(forTicks: world.ticks)
             GameProgress.shared.record(stars: stars, for: level.id)
             runTask?.cancel()
             activeLine = nil
