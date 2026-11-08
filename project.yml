@@ -48,3 +48,26 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
         ENABLE_BITCODE: NO
+  CompileConquerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: CompileConquer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mangomods.compileconquer.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/CompileConquer.app/CompileConquer
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  CompileConquer:
+    build:
+      targets:
+        CompileConquer: all
+    test:
+      config: Debug
+      targets:
+        - CompileConquerTests

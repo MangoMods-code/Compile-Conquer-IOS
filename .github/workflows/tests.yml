@@ -1,0 +1,65 @@
+name: Tests
+
+# Runs every level in the iOS simulator: map generation, scenes, the editor,
+# and a full Python solution per level. Separate from the release build, so it
+# never changes app version numbers.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          curl -sSL -o xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q xcodegen.zip -d xcodegen-dist
+          echo "$PWD/xcodegen-dist/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run tests in the simulator
+        run: |
+          set -o pipefail
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE "iPhone [0-9]+[^(]*" | sed 's/ *$//')
+          echo "Using simulator: $DEVICE"
+          xcodebuild test \
+            -project CompileConquer.xcodeproj \
+            -scheme CompileConquer \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|XCTAssert|Fatal error|crash|Executed|TEST (SUCCEEDED|FAILED)" || true
+          grep -q "TEST SUCCEEDED" test.log
+
+      - name: Crash reports
+        if: failure()
+        run: |
+          grep -E "Fatal error|Thread [0-9]+ Crashed|EXC_|SIGABRT|SIGTRAP" -A 25 test.log | head -120 || true
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -3); do
+            echo "=== $f"
+            python3 - "$f" <<'PY'
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          head, _, body = raw.partition("\n")
+          try:
+              d = json.loads(body)
+          except Exception:
+              print(raw[:4000]); sys.exit()
+          print(d.get("exception"), d.get("termination", {}).get("indicator"))
+          for th in d.get("threads", []):
+              if th.get("triggered"):
+                  imgs = d.get("usedImages", [])
+                  for fr in th.get("frames", [])[:25]:
+                      name = imgs[fr["imageIndex"]].get("name", "?") if fr.get("imageIndex") is not None and fr["imageIndex"] < len(imgs) else "?"
+                      print(name, fr.get("symbol"), fr.get("sourceFile"), fr.get("sourceLine"))
+          PY
+          done
