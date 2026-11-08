@@ -36,6 +36,11 @@ struct LineScript: DroneProgram {
             if raw.first == " " || raw.first == "\t" {
                 throw ScriptError(line: lineNo, message: "Unexpected indent. Lines only need indenting inside loops, which unlock soon.")
             }
+            // wait(3) runs three one-tick waits from the same line.
+            if let ticks = try LineScript.waitTicks(text, line: lineNo, defined: defined) {
+                for _ in 0..<ticks { out.append((line: lineNo, command: .wait)) }
+                continue
+            }
             let cmd = try LineScript.parse(text, line: lineNo, defined: defined)
             out.append((line: lineNo, command: cmd))
         }
@@ -49,6 +54,21 @@ struct LineScript: DroneProgram {
     }
 
     var isEmpty: Bool { steps.isEmpty }
+
+    /// `wait()` -> 1, `wait(3)` -> 3, anything else -> nil (not a wait call).
+    private static func waitTicks(_ text: String, line: Int, defined: Set<String>) throws -> Int? {
+        let compact = text.replacingOccurrences(of: " ", with: "")
+        guard compact.hasPrefix("wait("), compact.hasSuffix(")"), defined.contains("wait") else { return nil }
+        var arg = String(compact.dropFirst(5).dropLast())
+        if arg.hasPrefix("ticks=") { arg = String(arg.dropFirst(6)) }
+        if arg.isEmpty { return 1 }
+        guard let n = Int(arg) else {
+            throw ScriptError(line: line, message: "wait() takes a whole number of ticks, like wait(3).")
+        }
+        guard n >= 1 else { throw ScriptError(line: line, message: "wait(\(n)) wouldn't wait at all. Use 1 or more ticks.") }
+        guard n <= 100 else { throw ScriptError(line: line, message: "wait(\(n)) is a long nap. Keep it to 100 ticks or less.") }
+        return n
+    }
 
     private static func parse(_ text: String, line: Int, defined: Set<String>) throws -> DroneCommand {
         let firstWord = text.prefix { $0.isLetter || $0 == "_" }

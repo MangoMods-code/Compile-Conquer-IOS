@@ -136,9 +136,12 @@ enum FarmSetup {
             tick()
         """,
         "wait": """
-        def wait():
-            # Do nothing: just let one tick pass.
-            tick()
+        def wait(ticks=1):
+            # Do nothing while time passes.
+            # wait() lets 1 tick pass, wait(3)
+            # lets 3 ticks pass.
+            for i in range(ticks):
+                tick()
         """,
         "harvest": """
         def harvest():

@@ -13,6 +13,14 @@ generated levels. Campaigns are per programming language; Python is first.
   so keep both formats exactly like this.
 - Bundle ID `com.mangomods.compileconquer` must never change (it would become a separate app).
 
+## Design direction
+- Python is the first and easiest campaign; each later language campaign ramps up in difficulty.
+- Every level's main.py starts with a locked setup that declares every variable and defines every
+  command with its real body (`Core/FarmSetup.swift`). Keep those bodies in sync with `FarmWorld`.
+  Starter code and briefs point at the setup instead of naming the answer.
+- Planned: a free currency (Bits) and a paid one (Cores, later), both cosmetic-only. Ideas live in
+  `docs/IDEAS.md`; add new ideas there as they come up, don't build them until the user picks them.
+
 ## Code layout
 - `CompileConquer/Core` – pure game logic (grid, farm world, commands, level generator, script runner).
 - `CompileConquer/Game` – the level screen, SpriteKit map scene, code editor.
