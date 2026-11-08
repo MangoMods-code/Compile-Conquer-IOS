@@ -32,6 +32,7 @@ struct TitleView: View {
                     Label("PLAY", systemImage: "play.fill").frame(minWidth: 160)
                 }
                 .buttonStyle(PillButtonStyle())
+                .accessibilityIdentifier("play")
                 .padding(.top, 6)
                 Spacer(minLength: 0)
                 Text(AppInfo.versionLabel)
@@ -107,6 +108,7 @@ struct CampaignSelectView: View {
                         ForEach(Campaign.all) { c in
                             Button { onPick(c) } label: { card(c) }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("campaign.\(c.id)")
                                 .disabled(!c.available)
                         }
                     }
@@ -158,6 +160,7 @@ struct WorldSelectView: View {
                         ForEach(WorldInfo.all) { w in
                             Button { onPick(w) } label: { card(w) }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("world.\(w.id)")
                                 .disabled(!progress.isUnlocked(w))
                         }
                     }
@@ -224,6 +227,7 @@ struct LevelSelectView: View {
                             let unlocked = progress.isUnlocked(level, in: world.levels)
                             Button { onPick(level) } label: { tile(level, unlocked: unlocked) }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("level.\(level.id)")
                                 .disabled(!unlocked)
                         }
                         comingSoon
