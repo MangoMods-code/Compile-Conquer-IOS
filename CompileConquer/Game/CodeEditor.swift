@@ -38,6 +38,13 @@ struct CodeEditor: UIViewRepresentable {
         tv.keyboardType = .asciiCapable
         tv.keyboardAppearance = .dark
         tv.alwaysBounceVertical = true
+        tv.alwaysBounceHorizontal = false
+        tv.showsHorizontalScrollIndicator = false
+        // Measure the whole text up front. With estimated layout the view thinks the code
+        // is shorter than it is and stops scrolling partway down.
+        tv.layoutManager.allowsNonContiguousLayout = false
+        tv.textContainer.widthTracksTextView = true
+        tv.textContainer.lineBreakMode = .byWordWrapping
         tv.textContainerInset = UIEdgeInsets(top: 10, left: CodeTextView.gutter + 6, bottom: 24, right: 8)
         tv.lockedLength = lockedLength
         tv.inputAccessoryView = KeyRow(target: tv, commands: commands, onInsert: { [weak tv, weak coordinator = context.coordinator] in
@@ -99,12 +106,22 @@ struct CodeEditor: UIViewRepresentable {
             return false
         }
 
+        private var lastStyled: (text: String, active: Int?, error: Int?, locked: Int)?
+
         func highlight(_ tv: UITextView) {
+            // Only restyle when something visible changed; restyling resets the layout.
+            if let last = lastStyled, last.text == tv.text, last.active == parent.activeLine,
+               last.error == parent.errorLine, last.locked == parent.lockedLength {
+                return
+            }
+            lastStyled = (tv.text, parent.activeLine, parent.errorLine, parent.lockedLength)
             let sel = tv.selectedRange
             let offset = tv.contentOffset
             tv.attributedText = CodeStyle.attributed(tv.text, active: parent.activeLine, error: parent.errorLine, locked: parent.lockedLength)
             tv.typingAttributes = CodeStyle.baseAttributes
             tv.selectedRange = sel
+            tv.layoutManager.ensureLayout(for: tv.textContainer)
+            tv.layoutIfNeeded()
             tv.setContentOffset(offset, animated: false)
             tv.setNeedsDisplay()
         }
