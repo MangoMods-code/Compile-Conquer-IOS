@@ -17,9 +17,31 @@ struct LevelSpec: Identifiable, Hashable {
     /// Ticks needed for 3 and 2 stars. Finishing at all is 1 star.
     let threeStarTicks: Int
     let twoStarTicks: Int
+    /// Drone commands this level unlocks (and imports at the top of main.py).
+    let commands: [String]
     let starterCode: String
 
     func stars(forTicks t: Int) -> Int { t <= threeStarTicks ? 3 : (t <= twoStarTicks ? 2 : 1) }
+
+    var usesDirections: Bool { commands.contains("move") }
+
+    /// Names main.py gets from farm.py on this level.
+    var farmNames: [String] { (usesDirections ? ["North", "East", "South", "West"] : []) + ["Wheat"] }
+
+    /// The locked top of main.py: where every name in the level comes from.
+    var header: String {
+        """
+        # main.py · Farm \(number): \(title)
+        # Goal: harvest \(goal) Wheat. Open drone.py to see what each command does.
+        from drone import \(commands.joined(separator: ", "))
+        from farm import \(farmNames.joined(separator: ", "))
+
+
+        """
+    }
+
+    /// Number of locked lines at the top of main.py (the header ends with a blank line).
+    var headerLines: Int { header.components(separatedBy: "\n").count - 1 }
 
     static func == (a: LevelSpec, b: LevelSpec) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
@@ -33,13 +55,17 @@ enum FarmChapter {
             hint: "Each line runs one command and takes one tick. Wheat here needs 2 ticks to ripen.",
             width: 3, height: 3, soilPlots: 1, rocks: 0, ponds: 0, growTime: 2, goal: 1,
             threeStarTicks: 4, twoStarTicks: 6,
+            commands: ["plant", "wait", "harvest"],
             starterCode: """
-            # Welcome, operator. Each line is one command.
+            # The lines above import every command you can use here.
+            # Each line below runs one command and takes 1 tick.
+
             # The drone is sitting on soil. Plant a seed:
             plant()
-            # Let it grow:
+            # Give it time to grow:
             wait()
-            # Now harvest it!
+            # Now harvest it (the command is imported above):
+
             """),
         LevelSpec(
             id: "py.farm.2", number: 2, title: "Getting Around",
@@ -47,9 +73,15 @@ enum FarmChapter {
             hint: "North is up on the map. Bumping into the edge wastes a tick but doesn't crash.",
             width: 4, height: 4, soilPlots: 2, rocks: 0, ponds: 0, growTime: 3, goal: 2,
             threeStarTicks: 10, twoStarTicks: 14,
+            commands: ["move", "plant", "wait", "harvest"],
             starterCode: """
-            # Directions: North, East, South, West
+            # New: move(direction) flies one tile.
+            # Directions come from farm.py: North, East, South, West.
+            # North is up on the map.
+
             move(North)
+            plant()
+
             """),
         LevelSpec(
             id: "py.farm.3", number: 3, title: "Break New Ground",
@@ -57,9 +89,14 @@ enum FarmChapter {
             hint: "till(), then plant(). Plant both tiles before waiting so they grow at the same time.",
             width: 4, height: 4, soilPlots: 0, rocks: 1, ponds: 0, growTime: 3, goal: 2,
             threeStarTicks: 9, twoStarTicks: 13,
+            commands: ["move", "till", "plant", "wait", "harvest"],
             starterCode: """
+            # New: till() turns the grass under the drone into soil.
+            # Seeds only grow in soil.
+
             till()
             plant()
+
             """),
         LevelSpec(
             id: "py.farm.4", number: 4, title: "Water Works",
@@ -67,8 +104,13 @@ enum FarmChapter {
             hint: "Plant, then water each tile. Watered wheat ripens in half the time.",
             width: 5, height: 5, soilPlots: 3, rocks: 2, ponds: 1, growTime: 6, goal: 3,
             threeStarTicks: 18, twoStarTicks: 26,
+            commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
-            # Try: plant() then water()
+            # New: water() makes the soil under the drone grow crops 2x faster.
+
+            plant()
+            water()
+
             """),
         LevelSpec(
             id: "py.farm.5", number: 5, title: "Rocky Field",
@@ -76,8 +118,12 @@ enum FarmChapter {
             hint: "Rocks and ponds block the drone. Hit New Map if this layout is too nasty.",
             width: 6, height: 6, soilPlots: 4, rocks: 5, ponds: 1, growTime: 5, goal: 4,
             threeStarTicks: 24, twoStarTicks: 32,
+            commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
-            # Four plots, four harvests. Good luck, operator.
+            # Four plots, four harvests. Rocks and ponds block the drone.
+            # Good luck, operator.
+
+
             """),
     ]
 }

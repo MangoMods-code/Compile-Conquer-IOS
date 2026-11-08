@@ -6,6 +6,7 @@ struct GameScreen: View {
     let onExit: () -> Void
     let onNext: (() -> Void)?
     @State private var showHint = false
+    @State private var tab = 0
 
     init(level: LevelSpec, onExit: @escaping () -> Void, onNext: (() -> Void)?) {
         _session = StateObject(wrappedValue: GameSession(level: level))
@@ -146,13 +147,24 @@ struct GameScreen: View {
             .padding(.horizontal, 8)
             .padding(.top, 6)
 
-            CodeEditor(text: $session.code,
-                       activeLine: session.activeLine,
-                       errorLine: session.errorLine,
-                       editable: !session.state.isActive)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
-                .padding(.horizontal, 6)
+            fileTabs
+
+            Group {
+                if tab == 0 {
+                    CodeEditor(text: Binding(get: { session.fullText }, set: { session.setFullText($0) }),
+                               activeLine: session.activeLine,
+                               errorLine: session.errorLine,
+                               editable: !session.state.isActive,
+                               lockedLength: (session.level.header as NSString).length,
+                               commands: session.level.commands)
+                } else {
+                    CodeEditor(text: .constant(session.librarySource),
+                               activeLine: nil, errorLine: nil, editable: false)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
+            .padding(.horizontal, 6)
 
             controls
             consoleView
@@ -160,16 +172,38 @@ struct GameScreen: View {
         .background(Theme.panel)
     }
 
+    private var fileTabs: some View {
+        HStack(spacing: 4) {
+            tabButton("main.py", icon: "pencil", index: 0)
+            tabButton("drone.py", icon: "lock.fill", index: 1)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private func tabButton(_ title: String, icon: String, index: Int) -> some View {
+        Button { tab = index } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 9, weight: .bold))
+                Text(title).font(Theme.mono(12, .bold))
+            }
+            .foregroundStyle(tab == index ? Color.black : Theme.dim)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(tab == index ? Theme.accent : Theme.panelHi))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var controls: some View {
         HStack(spacing: 6) {
-            Button { session.runOrPause() } label: {
+            Button { tab = 0; session.runOrPause() } label: {
                 Label(session.state == .running ? "Pause" : (session.state == .paused ? "Resume" : "Run"),
                       systemImage: session.state == .running ? "pause.fill" : "play.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PillButtonStyle())
 
-            Button { session.step() } label: { Image(systemName: "forward.frame.fill") }
+            Button { tab = 0; session.step() } label: { Image(systemName: "forward.frame.fill") }
                 .buttonStyle(PillButtonStyle(color: Theme.text, filled: false))
 
             Button { session.reset() } label: { Image(systemName: "arrow.counterclockwise") }

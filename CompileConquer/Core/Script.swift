@@ -23,6 +23,7 @@ struct LineScript: DroneProgram {
 
     init(source: String) throws {
         var out: [(line: Int, command: DroneCommand)] = []
+        var imported: Set<String> = []
         for (i, raw) in source.components(separatedBy: "\n").enumerated() {
             let lineNo = i + 1
             var text = raw
@@ -32,7 +33,11 @@ struct LineScript: DroneProgram {
             if raw.first == " " || raw.first == "\t" {
                 throw ScriptError(line: lineNo, message: "Unexpected indent. Lines only need indenting inside loops, which unlock soon.")
             }
-            let cmd = try LineScript.parse(text, line: lineNo)
+            if text.hasPrefix("from ") || text.hasPrefix("import ") {
+                imported.formUnion(try LineScript.parseImport(text, line: lineNo))
+                continue
+            }
+            let cmd = try LineScript.parse(text, line: lineNo, imported: imported)
             out.append((line: lineNo, command: cmd))
         }
         steps = out
@@ -46,7 +51,26 @@ struct LineScript: DroneProgram {
 
     var isEmpty: Bool { steps.isEmpty }
 
-    private static func parse(_ text: String, line: Int) throws -> DroneCommand {
+    /// `from drone import plant, harvest` -> ["plant", "harvest"]
+    private static func parseImport(_ text: String, line: Int) throws -> Set<String> {
+        let parts = text.split(separator: " ", maxSplits: 3).map(String.init)
+        guard parts.count == 4, parts[0] == "from", parts[2] == "import" else {
+            throw ScriptError(line: line, message: "Imports look like: from drone import move, plant")
+        }
+        guard let available = DroneLibrary.modules[parts[1]] else {
+            throw ScriptError(line: line, message: "There's no module called `\(parts[1])`. Use drone or farm.")
+        }
+        var names: Set<String> = []
+        for n in parts[3].split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            guard available.contains(n) else {
+                throw ScriptError(line: line, message: "`\(n)` isn't in \(parts[1]).py.")
+            }
+            names.insert(n)
+        }
+        return names
+    }
+
+    private static func parse(_ text: String, line: Int, imported: Set<String>) throws -> DroneCommand {
         let firstWord = text.prefix { $0.isLetter || $0 == "_" }
         if blockKeywords.contains(String(firstWord)) {
             throw ScriptError(line: line, message: "`\(firstWord)` isn't unlocked yet. Loops and if-statements arrive in the next chapter update.")
@@ -60,6 +84,15 @@ struct LineScript: DroneProgram {
         let name = text[..<open].trimmingCharacters(in: .whitespaces)
         let arg = text[text.index(after: open)..<text.index(before: text.endIndex)].trimmingCharacters(in: .whitespaces)
 
+        if commandNames.contains(name), !imported.contains(name) {
+            throw ScriptError(line: line, message: "`\(name)` isn't imported, so Python doesn't know it yet. It unlocks in a later level.")
+        }
+        func checkName(_ n: String) throws {
+            if DroneLibrary.modules["farm"]!.contains(n), !imported.contains(n) {
+                throw ScriptError(line: line, message: "`\(n)` isn't imported from farm.py on this level.")
+            }
+        }
+
         func noArgs(_ cmd: DroneCommand) throws -> DroneCommand {
             guard arg.isEmpty else { throw ScriptError(line: line, message: "\(name)() doesn't take anything inside the brackets.") }
             return cmd
@@ -68,15 +101,20 @@ struct LineScript: DroneProgram {
         switch name {
         case "move":
             guard !arg.isEmpty else { throw ScriptError(line: line, message: "move() needs a direction, like move(North).") }
-            guard let d = Direction(name: arg) else {
+            guard let d = Direction(rawValue: arg) else {
+                if let d = Direction(name: arg) {
+                    throw ScriptError(line: line, message: "Python cares about capitals: write \(d.rawValue), not \(arg).")
+                }
                 throw ScriptError(line: line, message: "`\(arg)` isn't a direction. Use North, East, South or West.")
             }
+            try checkName(arg)
             return .move(d)
         case "plant":
             if arg.isEmpty { return .plant(.wheat) }
-            guard let kind = CropKind.allCases.first(where: { $0.rawValue.lowercased() == arg.lowercased() }) else {
+            guard let kind = CropKind(rawValue: arg) else {
                 throw ScriptError(line: line, message: "There's no seed called `\(arg)` yet. Try plant() or plant(Wheat).")
             }
+            try checkName(arg)
             return .plant(kind)
         case "till": return try noArgs(.till)
         case "water": return try noArgs(.water)

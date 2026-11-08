@@ -8,6 +8,10 @@ struct CodeEditor: UIViewRepresentable {
     var activeLine: Int?
     var errorLine: Int?
     var editable: Bool
+    /// Characters at the start that can't be edited (the import header).
+    var lockedLength: Int = 0
+    /// Drone commands to offer on the key row.
+    var commands: [String] = []
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -28,7 +32,8 @@ struct CodeEditor: UIViewRepresentable {
         tv.keyboardAppearance = .dark
         tv.alwaysBounceVertical = true
         tv.textContainerInset = UIEdgeInsets(top: 10, left: CodeTextView.gutter + 6, bottom: 24, right: 8)
-        tv.inputAccessoryView = KeyRow(target: tv, onInsert: { [weak tv, weak coordinator = context.coordinator] in
+        tv.lockedLength = lockedLength
+        tv.inputAccessoryView = KeyRow(target: tv, commands: commands, onInsert: { [weak tv, weak coordinator = context.coordinator] in
             guard let tv else { return }
             coordinator?.textViewDidChange(tv)
         })
@@ -39,6 +44,7 @@ struct CodeEditor: UIViewRepresentable {
 
     func updateUIView(_ tv: CodeTextView, context: Context) {
         context.coordinator.parent = self
+        tv.lockedLength = lockedLength
         if tv.text != text {
             tv.text = text
         }
@@ -66,6 +72,10 @@ struct CodeEditor: UIViewRepresentable {
 
         /// Auto-indent: keep the current indent on Enter, and add 4 spaces after a colon.
         func textView(_ tv: UITextView, shouldChangeTextIn range: NSRange, replacementText s: String) -> Bool {
+            if let ctv = tv as? CodeTextView, !ctv.allowsEdit(at: range) {
+                ctv.flashLocked()
+                return false
+            }
             guard s == "\n" else { return true }
             let ns = tv.text as NSString
             let lineRange = ns.lineRange(for: NSRange(location: range.location, length: 0))
@@ -80,7 +90,7 @@ struct CodeEditor: UIViewRepresentable {
         func highlight(_ tv: UITextView) {
             let sel = tv.selectedRange
             let offset = tv.contentOffset
-            tv.attributedText = CodeStyle.attributed(tv.text, active: parent.activeLine, error: parent.errorLine)
+            tv.attributedText = CodeStyle.attributed(tv.text, active: parent.activeLine, error: parent.errorLine, locked: parent.lockedLength)
             tv.typingAttributes = CodeStyle.baseAttributes
             tv.selectedRange = sel
             tv.setContentOffset(offset, animated: false)
@@ -106,9 +116,13 @@ enum CodeStyle {
         ]
     }()
 
-    static func attributed(_ text: String, active: Int?, error: Int?) -> NSAttributedString {
+    static func attributed(_ text: String, active: Int?, error: Int?, locked: Int = 0) -> NSAttributedString {
         let out = NSMutableAttributedString(string: text, attributes: baseAttributes)
         let full = NSRange(location: 0, length: (text as NSString).length)
+        if locked > 0 {
+            out.addAttribute(.backgroundColor, value: UIColor(red: 0.3, green: 0.5, blue: 1, alpha: 0.08),
+                             range: NSRange(location: 0, length: min(locked, full.length)))
+        }
         for (rx, color) in rules {
             for m in rx.matches(in: text, range: full) {
                 out.addAttribute(.foregroundColor, value: color, range: m.range)
@@ -146,6 +160,25 @@ enum CodeStyle {
 /// UITextView that draws line numbers in a left gutter and keeps the caret above the keyboard.
 final class CodeTextView: UITextView {
     static let gutter: CGFloat = 30
+    var lockedLength = 0 { didSet { if oldValue != lockedLength { setNeedsDisplay() } } }
+
+    func allowsEdit(at range: NSRange) -> Bool { range.location >= lockedLength }
+
+    /// A quick red pulse on the locked lines when someone tries to type there.
+    func flashLocked() {
+        let flash = UIView(frame: CGRect(x: 0, y: textContainerInset.top, width: bounds.width, height: lockedHeight()))
+        flash.backgroundColor = UIColor(red: 1, green: 0.35, blue: 0.3, alpha: 0.25)
+        flash.isUserInteractionEnabled = false
+        addSubview(flash)
+        UIView.animate(withDuration: 0.5, animations: { flash.alpha = 0 }, completion: { _ in flash.removeFromSuperview() })
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
+    private func lockedHeight() -> CGFloat {
+        guard lockedLength > 0, lockedLength <= (text as NSString).length else { return 0 }
+        let glyph = layoutManager.glyphIndexForCharacter(at: max(0, lockedLength - 1))
+        return layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).maxY
+    }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -181,10 +214,15 @@ final class CodeTextView: UITextView {
         let ns = text as NSString
         var charIndex = 0
         var lineNo = 1
+        let lockImage = UIImage(systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 7, weight: .bold))?
+            .withTintColor(UIColor(red: 0.45, green: 0.6, blue: 1, alpha: 0.8), renderingMode: .alwaysOriginal)
         func drawNumber(_ y: CGFloat, _ h: CGFloat) {
             let s = "\(lineNo)" as NSString
             let size = s.size(withAttributes: attrs)
             s.draw(at: CGPoint(x: CodeTextView.gutter - size.width - 4, y: y + (h - size.height) / 2), withAttributes: attrs)
+            if charIndex < lockedLength, let lockImage {
+                lockImage.draw(at: CGPoint(x: 2, y: y + (h - lockImage.size.height) / 2))
+            }
         }
         while charIndex < ns.length {
             let glyph = lm.glyphIndexForCharacter(at: charIndex)
@@ -208,15 +246,21 @@ final class KeyRow: UIInputView {
     private weak var target: UITextView?
     private let onInsert: () -> Void
 
-    private static let keys: [(label: String, insert: String)] = [
-        ("⇥", "    "), ("( )", "()"), (":", ":"), ("#", "# "),
-        ("move(", "move("), ("North", "North"), ("East", "East"), ("South", "South"), ("West", "West"),
-        ("till()", "till()"), ("plant()", "plant()"), ("water()", "water()"), ("harvest()", "harvest()"), ("wait()", "wait()"),
-    ]
+    private let keys: [(label: String, insert: String)]
 
-    init(target: UITextView, onInsert: @escaping () -> Void) {
+    init(target: UITextView, commands: [String], onInsert: @escaping () -> Void) {
         self.target = target
         self.onInsert = onInsert
+        var k: [(label: String, insert: String)] = [("⇥", "    "), ("( )", "()"), ("#", "# ")]
+        for c in commands {
+            if c == "move" {
+                k.append(("move(", "move("))
+                k += ["North", "East", "South", "West"].map { ($0, $0) }
+            } else {
+                k.append(("\(c)()", "\(c)()"))
+            }
+        }
+        self.keys = k
         super.init(frame: CGRect(x: 0, y: 0, width: 400, height: 46), inputViewStyle: .keyboard)
         allowsSelfSizing = true
 
@@ -229,7 +273,7 @@ final class KeyRow: UIInputView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(stack)
 
-        for (i, key) in KeyRow.keys.enumerated() {
+        for (i, key) in keys.enumerated() {
             stack.addArrangedSubview(button(key.label, tag: i))
         }
 
@@ -281,7 +325,11 @@ final class KeyRow: UIInputView {
 
     private func tapped(_ i: Int) {
         guard let tv = target else { return }
-        let key = KeyRow.keys[i]
+        let key = keys[i]
+        if let ctv = tv as? CodeTextView, !ctv.allowsEdit(at: tv.selectedRange) {
+            ctv.flashLocked()
+            return
+        }
         if key.insert == "()" {
             tv.insertText("()")
             if let pos = tv.position(from: tv.selectedTextRange?.start ?? tv.endOfDocument, offset: -1) {

@@ -58,6 +58,19 @@ final class GameSession: ObservableObject {
     }
 
     var seedText: String { SeedCode.format(seed) }
+
+    /// The whole main.py: the locked header (imports) plus the player's code.
+    var fullText: String { level.header + code }
+
+    /// Called by the editor. Edits that would touch the locked header are ignored.
+    func setFullText(_ text: String) {
+        guard text.hasPrefix(level.header) else { return }
+        let body = String(text.dropFirst(level.header.count))
+        if body != code { code = body; errorLine = nil }
+    }
+
+    /// The read-only drone.py / farm.py for this level.
+    var librarySource: String { DroneLibrary.source(for: level) }
     var wheat: Int { world.count(of: .wheat) }
 
     // MARK: Controls
@@ -124,7 +137,7 @@ final class GameSession: ObservableObject {
         reset()
         errorLine = nil
         do {
-            let script = try LineScript(source: code)
+            let script = try LineScript(source: fullText)
             guard !script.isEmpty else {
                 log("Write some commands first, like plant().", .warning)
                 return false
