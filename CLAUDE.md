@@ -14,7 +14,9 @@ generated levels. Campaigns are per programming language; Python is first.
 - Bundle ID `com.mangomods.compileconquer` must never change (it would become a separate app).
 
 ## Design direction
-- Python is the first and easiest campaign; each later language campaign ramps up in difficulty.
+- Difficulty ramps inside every language campaign: each one starts gentle at the Farm, and every
+  world after it (Warehouse, Mars Mine, Ocean, Rail Yard, ...) and every level within a world gets
+  progressively harder. Each new language restarts that ramp from the Farm; languages are not ranked.
 - Every level's main.py starts with a locked setup that declares every variable and defines every
   command with its real body (`Core/FarmSetup.swift`). Keep those bodies in sync with `FarmWorld`.
   Starter code and briefs point at the setup instead of naming the answer.
