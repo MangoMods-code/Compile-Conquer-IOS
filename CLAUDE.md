@@ -17,6 +17,12 @@ generated levels. Campaigns are per programming language; Python is first.
 - Difficulty ramps inside every language campaign: each one starts gentle at the Farm, and every
   world after it (Warehouse, Mars Mine, Ocean, Rail Yard, ...) and every level within a world gets
   progressively harder. Each new language restarts that ramp from the Farm; languages are not ranked.
+- Every world is a different place with its own machine, mechanics, commands and setup code;
+  only the language is shared. The Farm is the only drone/crops world. Planned direction:
+  Warehouse (forklift bot: scan/pick/drop/sort, carry limit), Mars Mine (rover: battery, drilling,
+  charging pads), Deep Ocean (sub: sonar search, oxygen), Rail Yard (switches and train timing).
+- Shortcuts like reusing one soil tile are allowed on the Farm and the first few Warehouse levels.
+  Later levels may close them off, but only through rules written visibly in that world's setup code.
 - Stars: 3★ limit is computed per generated map by `Core/ParSolver.swift` (the straightforward
   solution's tick count), 2★ adds a buffer. The Farm should be forgiving; later worlds can use
   tighter limits (e.g. based on optimized solutions) so each world is harder than the last.
