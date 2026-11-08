@@ -10,6 +10,7 @@ final class FarmScene: SKScene {
     private var overlayNodes: [Int: SKSpriteNode] = [:]
     private var tileKeys: [Int: String] = [:]
     private var overlayKeys: [Int: String] = [:]
+    private var ageBadges: [Int: SKNode] = [:]
     private var droneRoot = SKNode()
     private var droneLift = SKNode()
     private var droneBody = SKNode()
@@ -125,6 +126,7 @@ final class FarmScene: SKScene {
         overlayNodes = [:]
         tileKeys = [:]
         overlayKeys = [:]
+        ageBadges = [:]
 
         let margin = max(24, min(size.width, size.height) * 0.09)
         tileSize = floor(min((size.width - margin * 2) / CGFloat(w.width), (size.height - margin * 2) / CGFloat(w.height)))
@@ -270,6 +272,8 @@ final class FarmScene: SKScene {
                     overlayKey = "wheat\(stage)"
                     overlayTex = FarmArt.wheat(stage: stage, tileSize)
                 }
+                updateAgeBadge(i, crop: t.crop, at: node.position)
+
                 if overlayKeys[i] != overlayKey {
                     overlayKeys[i] = overlayKey
                     overlayNodes[i]?.removeFromParent()
@@ -293,6 +297,46 @@ final class FarmScene: SKScene {
                     }
                 }
             }
+        }
+    }
+
+    /// A small "age/GROW_TIME" tag on each crop so you can see when it will be ripe.
+    private func updateAgeBadge(_ i: Int, crop: Crop?, at p: CGPoint) {
+        guard let crop else {
+            ageBadges[i]?.removeFromParent()
+            ageBadges[i] = nil
+            return
+        }
+        let text = "\(min(crop.growth, crop.growTime))/\(crop.growTime)"
+        let badge: SKNode
+        if let existing = ageBadges[i] {
+            badge = existing
+        } else {
+            badge = SKNode()
+            let bg = SKShapeNode(rectOf: CGSize(width: tileSize * 0.42, height: tileSize * 0.2), cornerRadius: tileSize * 0.1)
+            bg.name = "bg"
+            bg.lineWidth = 1
+            badge.addChild(bg)
+            let label = SKLabelNode(fontNamed: "Menlo-Bold")
+            label.name = "label"
+            label.fontSize = max(8, tileSize * 0.14)
+            label.verticalAlignmentMode = .center
+            label.horizontalAlignmentMode = .center
+            badge.addChild(label)
+            badge.position = CGPoint(x: p.x + tileSize * 0.26, y: p.y - tileSize * 0.36)
+            badge.zPosition = 7
+            board.addChild(badge)
+            ageBadges[i] = badge
+        }
+        let ripe = crop.ripe
+        if let label = badge.childNode(withName: "label") as? SKLabelNode, label.text != text {
+            label.text = text
+            label.fontColor = ripe ? UIColor(red: 0.15, green: 0.1, blue: 0, alpha: 1) : .white
+            if label.parent != nil, !ripe { badge.run(.sequence([.scale(to: 1.25, duration: 0.08), .scale(to: 1, duration: 0.12)])) }
+        }
+        if let bg = badge.childNode(withName: "bg") as? SKShapeNode {
+            bg.fillColor = ripe ? UIColor(red: 0.98, green: 0.8, blue: 0.3, alpha: 0.95) : UIColor(white: 0, alpha: 0.6)
+            bg.strokeColor = ripe ? UIColor(red: 1, green: 0.95, blue: 0.7, alpha: 1) : UIColor(white: 1, alpha: 0.25)
         }
     }
 

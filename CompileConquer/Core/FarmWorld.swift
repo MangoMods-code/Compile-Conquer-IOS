@@ -128,9 +128,11 @@ struct FarmWorld {
             return .ok(note: nil)
 
         case .harvest:
-            guard let crop = tiles[i].crop else { return .warning("Nothing to harvest here.") }
+            guard let crop = tiles[i].crop else { return .warning("tile.crop is None here, so there was nothing to harvest.") }
             tiles[i].crop = nil
-            guard crop.ripe else { return .warning("That \(crop.kind.rawValue.lowercased()) wasn't ripe yet, so it was lost.") }
+            guard crop.ripe else {
+                return .warning("Unripe! crop.age was \(crop.growth) but GROW_TIME is \(crop.growTime), so the wheat was lost.")
+            }
             inventory[crop.kind, default: 0] += 1
             return .ok(note: "+1 \(crop.kind.rawValue)")
 
