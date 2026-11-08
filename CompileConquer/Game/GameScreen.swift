@@ -7,6 +7,8 @@ struct GameScreen: View {
     let onNext: (() -> Void)?
     @State private var showHint = false
     @State private var jump: EditorJump?
+    @State private var showSettings = false
+    @ObservedObject private var settings = AppSettings.shared
 
     init(level: LevelSpec, onExit: @escaping () -> Void, onNext: (() -> Void)?) {
         _session = StateObject(wrappedValue: GameSession(level: level))
@@ -34,6 +36,7 @@ struct GameScreen: View {
         .ignoresSafeArea(.keyboard)
         .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden()
+        .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
     // MARK: Map side
@@ -48,13 +51,13 @@ struct GameScreen: View {
                     .background(Circle().fill(Theme.panelHi))
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text("FARM \(session.level.number)")
+                Text("\(session.level.worldLabel) \(session.level.number)")
                     .font(Theme.mono(10, .bold)).foregroundStyle(Theme.accent)
                 Text(session.level.title)
                     .font(Theme.mono(14, .bold)).foregroundStyle(Theme.text).lineLimit(1)
             }
             Spacer(minLength: 4)
-            stat(icon: "leaf.fill", text: "\(session.wheat)/\(session.level.goal)", color: Theme.gold)
+            stat(icon: session.level.goalIcon, text: "\(session.goalCount)/\(session.level.goal)", color: Theme.gold)
             stat(icon: "clock", text: "\(session.world.ticks)/\(session.threeStarTicks)", color: session.world.ticks > session.threeStarTicks ? Theme.danger : Theme.text)
             Menu {
                 Button { session.newMap() } label: { Label("New map", systemImage: "dice") }
@@ -140,6 +143,7 @@ struct GameScreen: View {
                         Label("Restore starter code", systemImage: "arrow.uturn.backward")
                     }
                     .disabled(session.state.isActive)
+                    Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
                 } label: {
                     Image(systemName: "ellipsis.circle").foregroundStyle(Theme.dim).font(.system(size: 15))
                 }
@@ -153,9 +157,10 @@ struct GameScreen: View {
                        activeLine: session.activeLine,
                        errorLine: session.errorLine,
                        editable: !session.state.isActive,
-                       lockedLength: (session.level.header as NSString).length,
+                       lockedLength: session.lockedLength,
                        commands: session.level.commands,
-                       jump: jump)
+                       jump: jump,
+                       fontSize: CGFloat(settings.codeFontSize))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
             .padding(.horizontal, 6)
@@ -224,7 +229,7 @@ struct GameScreen: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(session.console) { line in
-                        Text(line.text)
+                        Text(line.kind == .output ? "› " + line.text : line.text)
                             .font(Theme.mono(10))
                             .foregroundStyle(color(for: line.kind))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,6 +251,7 @@ struct GameScreen: View {
     private func color(for kind: ConsoleLine.Kind) -> Color {
         switch kind {
         case .info: return Theme.dim
+        case .output: return Theme.text
         case .warning: return Theme.gold
         case .error: return Theme.danger
         case .success: return Theme.accent

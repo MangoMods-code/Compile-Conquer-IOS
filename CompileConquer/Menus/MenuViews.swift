@@ -5,6 +5,7 @@ import SwiftUI
 struct TitleView: View {
     let onPlay: () -> Void
     @State private var bob = false
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
@@ -40,6 +41,17 @@ struct TitleView: View {
             }
             .padding()
         }
+        .overlay(alignment: .topTrailing) {
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Theme.panelHi))
+            }
+            .padding(16)
+        }
+        .sheet(isPresented: $showSettings) { SettingsView() }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { bob = true }
     }
@@ -134,6 +146,7 @@ struct WorldSelectView: View {
     let campaign: Campaign
     let onPick: (WorldInfo) -> Void
     @ObservedObject private var progress = GameProgress.shared
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         ZStack {
@@ -145,7 +158,7 @@ struct WorldSelectView: View {
                         ForEach(WorldInfo.all) { w in
                             Button { onPick(w) } label: { card(w) }
                                 .buttonStyle(.plain)
-                                .disabled(!w.available)
+                                .disabled(!progress.isUnlocked(w))
                         }
                     }
                     .padding(.vertical, 4)
@@ -164,12 +177,18 @@ struct WorldSelectView: View {
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(w.available ? Theme.gold : Theme.dim)
                 Spacer()
-                if w.available {
+                if progress.isUnlocked(w) {
                     HStack(spacing: 3) {
                         Image(systemName: "star.fill").font(.system(size: 10))
                         Text("\(progress.totalStars(w.levels))/\(w.levels.count * 3)").font(Theme.mono(11, .bold))
                     }
                     .foregroundStyle(Theme.gold)
+                } else if w.available {
+                    Label("FINISH PREVIOUS", systemImage: "lock.fill")
+                        .font(Theme.mono(9, .bold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 7).padding(.vertical, 4)
+                        .background(Capsule().fill(Theme.panelHi))
                 } else {
                     LockedBadge()
                 }
@@ -241,7 +260,7 @@ struct LevelSelectView: View {
     private var comingSoon: some View {
         VStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 22, weight: .bold))
-            Text("Loops & more\nlevels next update").font(Theme.mono(11, .bold)).multilineTextAlignment(.center)
+            Text("More levels\ncoming soon").font(Theme.mono(11, .bold)).multilineTextAlignment(.center)
         }
         .foregroundStyle(Theme.dim)
         .frame(width: 150, height: 150)

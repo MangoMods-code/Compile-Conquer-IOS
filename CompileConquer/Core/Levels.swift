@@ -21,16 +21,24 @@ struct LevelSpec: Identifiable, Hashable {
     /// Drone commands this level unlocks (defined in the locked setup at the top of main.py).
     let commands: [String]
     let starterCode: String
-
-    func stars(forTicks t: Int) -> Int { t <= threeStarTicks ? 3 : (t <= twoStarTicks ? 2 : 1) }
+    /// Which world this level belongs to, and that world's extra settings.
+    var world: WorldKind = .farm
+    var warehouse: WarehouseParams? = nil
 
     var usesDirections: Bool { commands.contains("move") }
 
-    /// Names (besides commands) the setup declares that the player's code can use.
-    var setupNames: [String] { (usesDirections ? ["North", "East", "South", "West"] : []) + ["Wheat"] }
-
     /// The locked top of main.py: declares every variable and defines every command.
-    var header: String { FarmSetup.source(for: self) }
+    var header: String {
+        switch world {
+        case .farm: return FarmSetup.source(for: self)
+        case .warehouse: return WarehouseSetup.source(for: self)
+        }
+    }
+
+    /// What the goal counts, for the top bar and messages.
+    var goalNoun: String { world == .farm ? "Wheat" : "crates shipped" }
+    var goalIcon: String { world == .farm ? "leaf.fill" : "shippingbox.fill" }
+    var worldLabel: String { world == .farm ? "FARM" : "WAREHOUSE" }
 
     /// Number of locked lines at the top of main.py (the header ends with a newline).
     var headerLines: Int { header.components(separatedBy: "\n").count - 1 }

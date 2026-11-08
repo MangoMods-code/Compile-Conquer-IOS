@@ -48,6 +48,8 @@ A running list of ideas. Nothing here is in the game until it's picked and built
 
 ## Ways to earn Bits
 
+- **Generalize bonus:** levels that re-roll every run (like Mystery Boxes) award bonus Bits when the same code wins 3 runs in a row.
+
 - **"Efficient" badge:** a bonus badge plus Bits for beating a map's 3-star limit by a margin, e.g. by planting every plot before waiting. Rewards optimizing without requiring it.
 
 - **Daily seed:** everyone gets the same map that day, with a leaderboard by ticks and by lines of code.

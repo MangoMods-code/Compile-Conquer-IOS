@@ -32,8 +32,23 @@ generated levels. Campaigns are per programming language; Python is first.
 - Planned: a free currency (Bits) and a paid one (Cores, later), both cosmetic-only. Ideas live in
   `docs/IDEAS.md`; add new ideas there as they come up, don't build them until the user picks them.
 
+## How a run works
+- `Core/Python/` is our own Python subset (lexer, parser, tree-walking interpreter): variables,
+  if/elif/else, while, for, def/return, lists, dicts, print, common builtins. No imports/classes.
+- Pressing Run simulates the whole program instantly (`Core/Runtime/Simulator.swift`) against a
+  copy of the world, recording a trace of ticks and prints; `GameSession` then plays it back.
+- Each world installs its own builtins (commands + read-only objects like `drone`, `field`,
+  `loader`, `floor`, `BAYS`) in `Simulator.swift`. They must match that world's locked setup code.
+- The player's code is capped at 5000 lines; the editor measures its own content height.
+
+## Settings & owner tools
+- `App/AppSettings.swift`: code text size, starting speed, crop age tags, haptics.
+- Owner tools: tap the version 7 times in Settings, enter the owner code (starts as "conquer").
+  "Play any campaign" opens every built campaign/world; levels still unlock in order.
+
 ## Code layout
-- `CompileConquer/Core` – pure game logic (grid, farm world, commands, level generator, script runner).
+- `CompileConquer/Core` – pure game logic: Farm (`FarmWorld`, `FarmSetup`, `Levels`, `ParSolver`),
+  `Warehouse/`, `Python/`, `Runtime/` (world state enums + simulator).
 - `CompileConquer/Game` – the level screen, SpriteKit map scene, code editor.
 - `CompileConquer/Menus` – title, campaign, world and level select.
 - Landscape only, iOS 17+, Swift 5 mode, SwiftUI + SpriteKit, no external packages.

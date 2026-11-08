@@ -302,7 +302,7 @@ final class FarmScene: SKScene {
 
     /// A small "age/GROW_TIME" tag on each crop so you can see when it will be ripe.
     private func updateAgeBadge(_ i: Int, crop: Crop?, at p: CGPoint) {
-        guard let crop else {
+        guard let crop, AppSettings.shared.showCropAges else {
             ageBadges[i]?.removeFromParent()
             ageBadges[i] = nil
             return
@@ -510,5 +510,17 @@ final class FarmScene: SKScene {
                 .fadeOut(withDuration: 0.5),
             ]), .removeFromParent()]))
         }
+    }
+}
+
+
+extension FarmScene: WorldRenderer {
+    func load(_ state: WorldState) {
+        if case .farm(let w) = state { load(w) }
+    }
+
+    func apply(_ state: WorldState, action: WorldAction, outcome: CommandOutcome, duration: TimeInterval) {
+        guard case .farm(let w) = state, case .farm(let c) = action else { return }
+        apply(w, command: c, outcome: outcome, duration: duration)
     }
 }

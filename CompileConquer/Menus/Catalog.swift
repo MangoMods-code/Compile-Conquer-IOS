@@ -25,11 +25,20 @@ struct WorldInfo: Hashable, Identifiable {
     let symbol: String
     let available: Bool
 
-    var levels: [LevelSpec] { id == "farm" ? FarmChapter.levels : [] }
+    var levels: [LevelSpec] {
+        switch id {
+        case "farm": return FarmChapter.levels
+        case "warehouse": return WarehouseChapter.levels
+        default: return []
+        }
+    }
+
+    /// The world a level belongs to.
+    static func containing(_ level: LevelSpec) -> WorldInfo? { all.first { $0.levels.contains(level) } }
 
     static let all: [WorldInfo] = [
         WorldInfo(id: "farm", name: "The Farm", machine: "Farm drone", blurb: "Till, plant, water and harvest from the sky.", symbol: "leaf.fill", available: true),
-        WorldInfo(id: "warehouse", name: "Warehouse", machine: "Forklift bot", blurb: "Scan, pick and sort crates.", symbol: "shippingbox.fill", available: false),
+        WorldInfo(id: "warehouse", name: "Warehouse", machine: "Forklift bot", blurb: "Pick, scan and ship crates to the right bays.", symbol: "shippingbox.fill", available: true),
         WorldInfo(id: "mars", name: "Mars Mine", machine: "Rover", blurb: "Drill ore before your battery dies.", symbol: "globe.americas.fill", available: false),
         WorldInfo(id: "ocean", name: "Deep Ocean", machine: "Submarine", blurb: "Sonar, salvage, and watch your oxygen.", symbol: "water.waves", available: false),
         WorldInfo(id: "rail", name: "Rail Yard", machine: "Switch tower", blurb: "Route trains without a crash.", symbol: "tram.fill", available: false),

@@ -39,7 +39,7 @@ struct RootView: View {
         case .levels(_, let w):
             LevelSelectView(world: w) { path.append(.play($0)) }
         case .play(let level):
-            let chapter = FarmChapter.levels
+            let chapter = WorldInfo.containing(level)?.levels ?? []
             let next = chapter.firstIndex(of: level).flatMap { $0 + 1 < chapter.count ? chapter[$0 + 1] : nil }
             GameScreen(
                 level: level,

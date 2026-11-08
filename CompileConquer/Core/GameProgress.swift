@@ -27,6 +27,26 @@ final class GameProgress: ObservableObject {
 
     func totalStars(_ chapter: [LevelSpec]) -> Int { chapter.reduce(0) { $0 + stars(for: $1.id) } }
 
+    /// Every level in a chapter has at least 1 star.
+    func isComplete(_ chapter: [LevelSpec]) -> Bool { !chapter.isEmpty && chapter.allSatisfy { stars(for: $0.id) > 0 } }
+
+    /// Worlds open in order: the first is always open, each next one opens when the previous is finished.
+    /// The owner's "Play any campaign" switch opens every built world.
+    func isUnlocked(_ world: WorldInfo) -> Bool {
+        guard world.available else { return false }
+        if AppSettings.shared.playAnyCampaign { return true }
+        guard let i = WorldInfo.all.firstIndex(of: world), i > 0 else { return true }
+        return isComplete(WorldInfo.all[i - 1].levels)
+    }
+
+    /// Clears stars and saved code.
+    func resetAll() {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("cc.") {
+            defaults.removeObject(forKey: key)
+        }
+        starMap = [:]
+    }
+
     func code(for level: LevelSpec) -> String {
         defaults.string(forKey: "cc.code.\(level.id)") ?? level.starterCode
     }
