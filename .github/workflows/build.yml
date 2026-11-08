@@ -1,0 +1,88 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every build gets its own version so Mango Signer always sees a new update:
+      #   app version 0.1.<run>, build number <run>, release tag v0.1.<run>,
+      #   file CompileConquer-0.1.<run>.ipa. The run number only ever goes up.
+      - name: Set version
+        run: |
+          echo "APP_VERSION=0.1.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "APP_BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Install XcodeGen
+        run: |
+          curl -sSL -o xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+          unzip -q xcodegen.zip -d xcodegen-dist
+          echo "$PWD/xcodegen-dist/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project CompileConquer.xcodeproj \
+            -target CompileConquer \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
+
+      - name: Package IPA
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R build/Release-iphoneos/CompileConquer.app Payload/
+          IPA="CompileConquer-$APP_VERSION.ipa"
+          zip -qry "$IPA" Payload
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+          ls -lh "$IPA"
+
+      # Read the version back out of the finished app and refuse to publish if it isn't exactly
+      # what this run should have stamped (this is the check that stops "version already uploaded").
+      - name: Verify version inside the IPA
+        run: |
+          PLIST=Payload/CompileConquer.app/Info.plist
+          V=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          B=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+          ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST")
+          echo "IPA reports version $V, build $B, bundle $ID"
+          [ "$V" = "$APP_VERSION" ] || { echo "::error::Version is $V, expected $APP_VERSION"; exit 1; }
+          [ "$B" = "$APP_BUILD" ] || { echo "::error::Build is $B, expected $APP_BUILD"; exit 1; }
+          [ "$ID" = "com.mangomods.compileconquer" ] || { echo "::error::Bundle ID is $ID"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA }}
+          path: ${{ env.IPA }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$APP_VERSION" "$IPA" \
+            --target "${{ github.sha }}" \
+            --title "Compile & Conquer $APP_VERSION (build $APP_BUILD)" \
+            --notes "Version $APP_VERSION (build $APP_BUILD), unsigned, from ${{ github.sha }}."

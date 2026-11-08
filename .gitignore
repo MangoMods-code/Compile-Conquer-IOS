@@ -1,0 +1,8 @@
+*.xcodeproj
+build/
+Payload/
+*.ipa
+xcodegen-dist/
+xcodegen.zip
+DerivedData/
+.DS_Store
