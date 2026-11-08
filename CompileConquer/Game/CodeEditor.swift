@@ -26,7 +26,7 @@ struct CodeEditor: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> CodeTextView {
-        let tv = CodeTextView(usingTextLayoutManager: false)
+        let tv = CodeTextView.make()
         tv.delegate = context.coordinator
         tv.backgroundColor = UIColor(red: 0.07, green: 0.085, blue: 0.11, alpha: 1)
         tv.font = CodeStyle.font(fontSize)
@@ -214,6 +214,24 @@ enum CodeStyle {
 /// itself (so it can always scroll to the last line), and keeps the caret above the keyboard.
 final class CodeTextView: UITextView {
     static let gutter: CGFloat = 36
+
+    /// Builds the text view with a classic TextKit 1 stack through a designated initializer.
+    /// (UITextView(usingTextLayoutManager:) skips Swift's property setup in subclasses, which
+    /// left lineStarts uninitialized and crashed every level in 0.1.10.)
+    static func make() -> CodeTextView {
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layout.addTextContainer(container)
+        let tv = CodeTextView(frame: .zero, textContainer: container)
+        tv.storageRef = storage
+        return tv
+    }
+
+    /// The text container only weakly references its layout chain, so keep the storage alive.
+    private var storageRef: NSTextStorage?
     var lockedLength = 0 {
         didSet { if oldValue != lockedLength { lockedLines = line(containing: max(0, lockedLength - 1)); setNeedsDisplay() } }
     }

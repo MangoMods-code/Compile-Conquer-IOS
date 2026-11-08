@@ -110,10 +110,12 @@ final class SmokeTests: XCTestCase {
 
     func testEditorWithEveryHeader() {
         for level in allLevels {
-            let tv = CodeTextView(usingTextLayoutManager: false)
+            let session = GameSession(level: level)
+            // Same order as CodeEditor.makeUIView: locked length is set before any text.
+            let tv = CodeTextView.make()
+            tv.lockedLength = session.lockedLength
             tv.frame = CGRect(x: 0, y: 0, width: 400, height: 250)
             tv.font = CodeStyle.font(13)
-            let session = GameSession(level: level)
             tv.text = session.fullText + String(repeating: "move(North)\n", count: 300)
             tv.textChanged()
             tv.lockedLength = session.lockedLength
