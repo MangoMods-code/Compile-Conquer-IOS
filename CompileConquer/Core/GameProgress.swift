@@ -31,6 +31,10 @@ final class GameProgress: ObservableObject {
         defaults.string(forKey: "cc.code.\(level.id)") ?? level.starterCode
     }
 
+    func hasSavedCode(for level: LevelSpec) -> Bool {
+        defaults.string(forKey: "cc.code.\(level.id)") != nil
+    }
+
     func saveCode(_ code: String, for level: LevelSpec) {
         defaults.set(code, forKey: "cc.code.\(level.id)")
     }

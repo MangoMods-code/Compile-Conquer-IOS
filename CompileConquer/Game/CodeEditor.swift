@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+/// A request to scroll the editor so a line sits at the top. A new id triggers a new scroll.
+struct EditorJump: Equatable {
+    let id = UUID()
+    let line: Int
+}
+
 /// A code editor made for a phone: line numbers, syntax colors, a row of coding keys
 /// above the keyboard, and highlights for the running line and error line.
 struct CodeEditor: UIViewRepresentable {
@@ -12,6 +18,7 @@ struct CodeEditor: UIViewRepresentable {
     var lockedLength: Int = 0
     /// Drone commands to offer on the key row.
     var commands: [String] = []
+    var jump: EditorJump? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -53,11 +60,16 @@ struct CodeEditor: UIViewRepresentable {
         context.coordinator.highlight(tv)
         if let line = activeLine ?? errorLine, let range = CodeStyle.range(ofLine: line, in: tv.text) {
             tv.scrollRangeToVisible(range)
+        } else if let jump, jump.id != context.coordinator.lastJump {
+            context.coordinator.lastJump = jump.id
+            // Wait a moment on first show so the text view has its real size.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak tv] in tv?.scroll(toLine: jump.line) }
         }
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: CodeEditor
+        var lastJump: UUID?
         init(_ parent: CodeEditor) { self.parent = parent }
 
         func textViewDidChange(_ tv: UITextView) {
@@ -100,7 +112,7 @@ struct CodeEditor: UIViewRepresentable {
 }
 
 enum CodeStyle {
-    static let font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+    static let font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     static let plain = UIColor(white: 0.9, alpha: 1)
     static let baseAttributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: plain]
 
@@ -108,7 +120,9 @@ enum CodeStyle {
         func rx(_ p: String) -> NSRegularExpression { try! NSRegularExpression(pattern: p) }
         return [
             (rx("\\b(for|while|if|elif|else|def|return|in|range|and|or|not|break|continue|True|False|None)\\b"), UIColor(red: 0.85, green: 0.5, blue: 0.95, alpha: 1)),
-            (rx("\\b(move|till|plant|water|harvest|wait)(?=\\s*\\()"), UIColor(red: 0.4, green: 0.75, blue: 1, alpha: 1)),
+            (rx("\\b(move|till|plant|water|harvest|wait|tick)(?=\\s*\\()"), UIColor(red: 0.4, green: 0.75, blue: 1, alpha: 1)),
+            (rx("(?<=\\.)[a-z_]+"), UIColor(red: 0.55, green: 0.85, blue: 0.8, alpha: 1)),
+            (rx("\\b(field|drone|stock|tile|GOAL|GROW_TIME|Field|Crop)\\b"), UIColor(red: 1, green: 0.55, blue: 0.7, alpha: 1)),
             (rx("\\b(North|East|South|West|Wheat)\\b"), UIColor(red: 0.98, green: 0.78, blue: 0.3, alpha: 1)),
             (rx("\\b\\d+(\\.\\d+)?\\b"), UIColor(red: 1, green: 0.6, blue: 0.4, alpha: 1)),
             (rx("(\"[^\"\\n]*\"|'[^'\\n]*')"), UIColor(red: 0.6, green: 0.9, blue: 0.5, alpha: 1)),
@@ -163,6 +177,25 @@ final class CodeTextView: UITextView {
     var lockedLength = 0 { didSet { if oldValue != lockedLength { setNeedsDisplay() } } }
 
     func allowsEdit(at range: NSRange) -> Bool { range.location >= lockedLength }
+
+    /// Scrolls so that a 1-based line sits at the top of the editor.
+    func scroll(toLine line: Int) {
+        let minY = -adjustedContentInset.top
+        guard line > 1, let range = CodeStyle.range(ofLine: line, in: text) else {
+            setContentOffset(CGPoint(x: 0, y: minY), animated: false)
+            return
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let y: CGFloat
+        if range.location >= (text as NSString).length {
+            y = layoutManager.extraLineFragmentRect.minY
+        } else {
+            let glyph = layoutManager.glyphIndexForCharacter(at: range.location)
+            y = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY
+        }
+        let maxY = max(minY, contentSize.height - bounds.height + adjustedContentInset.bottom)
+        setContentOffset(CGPoint(x: 0, y: min(maxY, max(minY, y + textContainerInset.top - 6))), animated: false)
+    }
 
     /// A quick red pulse on the locked lines when someone tries to type there.
     func flashLocked() {

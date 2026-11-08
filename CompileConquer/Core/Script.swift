@@ -21,11 +21,14 @@ struct LineScript: DroneProgram {
     static let commandNames = ["move", "till", "plant", "water", "harvest", "wait"]
     private static let blockKeywords = ["for", "while", "if", "elif", "else", "def", "return", "break", "continue"]
 
-    init(source: String) throws {
+    /// - Parameters:
+    ///   - source: the player's part of main.py (below the locked setup).
+    ///   - lineOffset: how many setup lines come before it, so errors point at the right line.
+    ///   - defined: every command and name the setup declares on this level.
+    init(source: String, lineOffset: Int = 0, defined: Set<String>) throws {
         var out: [(line: Int, command: DroneCommand)] = []
-        var imported: Set<String> = []
         for (i, raw) in source.components(separatedBy: "\n").enumerated() {
-            let lineNo = i + 1
+            let lineNo = i + 1 + lineOffset
             var text = raw
             if let hash = text.firstIndex(of: "#") { text = String(text[..<hash]) }
             text = text.trimmingCharacters(in: .whitespaces)
@@ -33,11 +36,7 @@ struct LineScript: DroneProgram {
             if raw.first == " " || raw.first == "\t" {
                 throw ScriptError(line: lineNo, message: "Unexpected indent. Lines only need indenting inside loops, which unlock soon.")
             }
-            if text.hasPrefix("from ") || text.hasPrefix("import ") {
-                imported.formUnion(try LineScript.parseImport(text, line: lineNo))
-                continue
-            }
-            let cmd = try LineScript.parse(text, line: lineNo, imported: imported)
+            let cmd = try LineScript.parse(text, line: lineNo, defined: defined)
             out.append((line: lineNo, command: cmd))
         }
         steps = out
@@ -51,45 +50,35 @@ struct LineScript: DroneProgram {
 
     var isEmpty: Bool { steps.isEmpty }
 
-    /// `from drone import plant, harvest` -> ["plant", "harvest"]
-    private static func parseImport(_ text: String, line: Int) throws -> Set<String> {
-        let parts = text.split(separator: " ", maxSplits: 3).map(String.init)
-        guard parts.count == 4, parts[0] == "from", parts[2] == "import" else {
-            throw ScriptError(line: line, message: "Imports look like: from drone import move, plant")
-        }
-        guard let available = DroneLibrary.modules[parts[1]] else {
-            throw ScriptError(line: line, message: "There's no module called `\(parts[1])`. Use drone or farm.")
-        }
-        var names: Set<String> = []
-        for n in parts[3].split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) {
-            guard available.contains(n) else {
-                throw ScriptError(line: line, message: "`\(n)` isn't in \(parts[1]).py.")
-            }
-            names.insert(n)
-        }
-        return names
-    }
-
-    private static func parse(_ text: String, line: Int, imported: Set<String>) throws -> DroneCommand {
+    private static func parse(_ text: String, line: Int, defined: Set<String>) throws -> DroneCommand {
         let firstWord = text.prefix { $0.isLetter || $0 == "_" }
         if blockKeywords.contains(String(firstWord)) {
             throw ScriptError(line: line, message: "`\(firstWord)` isn't unlocked yet. Loops and if-statements arrive in the next chapter update.")
         }
+        if text.hasPrefix("from ") || text.hasPrefix("import ") {
+            throw ScriptError(line: line, message: "No imports needed: everything is already defined in the setup above.")
+        }
+        if text.contains("="), !text.contains("==") {
+            throw ScriptError(line: line, message: "Making your own variables unlocks in the next update. For now, call the commands defined in the setup.")
+        }
         guard let open = text.firstIndex(of: "("), text.hasSuffix(")") else {
-            if commandNames.contains(text) {
-                throw ScriptError(line: line, message: "Add brackets to run a command: \(text)()")
+            if defined.contains(text), commandNames.contains(text) {
+                throw ScriptError(line: line, message: "`\(text)` is a function. Add brackets to call it: \(text)()")
             }
-            throw ScriptError(line: line, message: "I don't understand `\(text)`. Commands look like move(North) or harvest().")
+            if defined.contains(text) || ["field", "drone", "stock", "GOAL", "GROW_TIME"].contains(text) {
+                throw ScriptError(line: line, message: "`\(text)` is a variable from the setup. On its own line it doesn't do anything.")
+            }
+            throw ScriptError(line: line, message: "I don't understand `\(text)`. Calls look like name() or name(something).")
         }
         let name = text[..<open].trimmingCharacters(in: .whitespaces)
         let arg = text[text.index(after: open)..<text.index(before: text.endIndex)].trimmingCharacters(in: .whitespaces)
 
-        if commandNames.contains(name), !imported.contains(name) {
-            throw ScriptError(line: line, message: "`\(name)` isn't imported, so Python doesn't know it yet. It unlocks in a later level.")
+        if commandNames.contains(name), !defined.contains(name) {
+            throw ScriptError(line: line, message: "NameError: `\(name)` isn't defined in this level's setup.")
         }
         func checkName(_ n: String) throws {
-            if DroneLibrary.modules["farm"]!.contains(n), !imported.contains(n) {
-                throw ScriptError(line: line, message: "`\(n)` isn't imported from farm.py on this level.")
+            if !defined.contains(n) {
+                throw ScriptError(line: line, message: "NameError: `\(n)` isn't defined in this level's setup.")
             }
         }
 
@@ -121,9 +110,10 @@ struct LineScript: DroneProgram {
         case "harvest": return try noArgs(.harvest)
         case "wait": return try noArgs(.wait)
         default:
-            let suggestion = commandNames.min { editDistance($0, name) < editDistance($1, name) } ?? "move"
-            let hint = editDistance(suggestion, name) <= 2 ? " Did you mean \(suggestion)()?" : ""
-            throw ScriptError(line: line, message: "`\(name)()` isn't a drone command.\(hint)")
+            let known = commandNames.filter { defined.contains($0) }
+            let suggestion = known.min { editDistance($0, name) < editDistance($1, name) }
+            let hint = suggestion.map { editDistance($0, name) <= 2 ? " Did you mean \($0)()?" : "" } ?? ""
+            throw ScriptError(line: line, message: "NameError: `\(name)` isn't defined in the setup.\(hint)")
         }
     }
 

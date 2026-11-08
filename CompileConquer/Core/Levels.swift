@@ -17,7 +17,7 @@ struct LevelSpec: Identifiable, Hashable {
     /// Ticks needed for 3 and 2 stars. Finishing at all is 1 star.
     let threeStarTicks: Int
     let twoStarTicks: Int
-    /// Drone commands this level unlocks (and imports at the top of main.py).
+    /// Drone commands this level unlocks (defined in the locked setup at the top of main.py).
     let commands: [String]
     let starterCode: String
 
@@ -25,22 +25,13 @@ struct LevelSpec: Identifiable, Hashable {
 
     var usesDirections: Bool { commands.contains("move") }
 
-    /// Names main.py gets from farm.py on this level.
-    var farmNames: [String] { (usesDirections ? ["North", "East", "South", "West"] : []) + ["Wheat"] }
+    /// Names (besides commands) the setup declares that the player's code can use.
+    var setupNames: [String] { (usesDirections ? ["North", "East", "South", "West"] : []) + ["Wheat"] }
 
-    /// The locked top of main.py: where every name in the level comes from.
-    var header: String {
-        """
-        # main.py · Farm \(number): \(title)
-        # Goal: harvest \(goal) Wheat. Open drone.py to see what each command does.
-        from drone import \(commands.joined(separator: ", "))
-        from farm import \(farmNames.joined(separator: ", "))
+    /// The locked top of main.py: declares every variable and defines every command.
+    var header: String { FarmSetup.source(for: self) }
 
-
-        """
-    }
-
-    /// Number of locked lines at the top of main.py (the header ends with a blank line).
+    /// Number of locked lines at the top of main.py (the header ends with a newline).
     var headerLines: Int { header.components(separatedBy: "\n").count - 1 }
 
     static func == (a: LevelSpec, b: LevelSpec) -> Bool { a.id == b.id }
@@ -51,65 +42,60 @@ enum FarmChapter {
     static let levels: [LevelSpec] = [
         LevelSpec(
             id: "py.farm.1", number: 1, title: "First Flight",
-            brief: "Harvest 1 Wheat. The drone is parked on soil. Plant, wait for it to ripen, harvest.",
-            hint: "Each line runs one command and takes one tick. Wheat here needs 2 ticks to ripen.",
+            brief: "Harvest 1 Wheat. The drone is parked on soil. Scroll up through the setup to see what you can do.",
+            hint: "Look at stock and GOAL in the setup. Which def adds to stock? Read its if-statement.",
             width: 3, height: 3, soilPlots: 1, rocks: 0, ponds: 0, growTime: 2, goal: 1,
             threeStarTicks: 4, twoStarTicks: 6,
             commands: ["plant", "wait", "harvest"],
             starterCode: """
-            # The lines above import every command you can use here.
-            # Each line below runs one command and takes 1 tick.
+            # Your code runs top to bottom. Each
+            # command takes 1 tick (see tick() above).
 
-            # The drone is sitting on soil. Plant a seed:
             plant()
-            # Give it time to grow:
             wait()
-            # Now harvest it (the command is imported above):
+            # The wheat is ripe now. Which def in the
+            # setup adds 1 to stock? Call it here:
 
             """),
         LevelSpec(
             id: "py.farm.2", number: 2, title: "Getting Around",
-            brief: "Harvest 2 Wheat. The soil is nearby; fly there with move(North), move(East)...",
-            hint: "North is up on the map. Bumping into the edge wastes a tick but doesn't crash.",
+            brief: "Harvest 2 Wheat. The soil isn't under the drone this time. A new def in the setup can help.",
+            hint: "move(direction) changes drone.x or drone.y by 1. North is up, East is right.",
             width: 4, height: 4, soilPlots: 2, rocks: 0, ponds: 0, growTime: 3, goal: 2,
             threeStarTicks: 10, twoStarTicks: 14,
             commands: ["move", "plant", "wait", "harvest"],
             starterCode: """
-            # New: move(direction) flies one tile.
-            # Directions come from farm.py: North, East, South, West.
-            # North is up on the map.
+            # New in the setup: directions and one new
+            # command. Read how it changes drone.x and
+            # drone.y, then fly to the soil.
 
-            move(North)
-            plant()
 
             """),
         LevelSpec(
             id: "py.farm.3", number: 3, title: "Break New Ground",
-            brief: "Harvest 2 Wheat. There's no soil yet. till() turns grass under the drone into soil.",
-            hint: "till(), then plant(). Plant both tiles before waiting so they grow at the same time.",
+            brief: "Harvest 2 Wheat. There's no soil anywhere. Look at plant(): what does it need?",
+            hint: "till() turns grass into soil. Plant both tiles before waiting so they grow together.",
             width: 4, height: 4, soilPlots: 0, rocks: 1, ponds: 0, growTime: 3, goal: 2,
             threeStarTicks: 9, twoStarTicks: 13,
             commands: ["move", "till", "plant", "wait", "harvest"],
             starterCode: """
-            # New: till() turns the grass under the drone into soil.
-            # Seeds only grow in soil.
+            # plant() only works when tile.ground is
+            # "soil". Find the new def that sets it.
 
-            till()
-            plant()
 
             """),
         LevelSpec(
             id: "py.farm.4", number: 4, title: "Water Works",
-            brief: "Harvest 3 Wheat. Wheat grows slowly here. water() makes a tile grow twice as fast.",
-            hint: "Plant, then water each tile. Watered wheat ripens in half the time.",
+            brief: "Harvest 3 Wheat. GROW_TIME is high on this level. Read tick() to see what speeds crops up.",
+            hint: "water() sets tile.wet, and tick() ages wet crops by 2. Plant, then water each tile.",
             width: 5, height: 5, soilPlots: 3, rocks: 2, ponds: 1, growTime: 6, goal: 3,
             threeStarTicks: 18, twoStarTicks: 26,
             commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
-            # New: water() makes the soil under the drone grow crops 2x faster.
+            # Check GROW_TIME in the setup. Waiting
+            # that long is slow. Look at tick(): what
+            # makes a crop age faster?
 
-            plant()
-            water()
 
             """),
         LevelSpec(
@@ -120,8 +106,8 @@ enum FarmChapter {
             threeStarTicks: 24, twoStarTicks: 32,
             commands: ["move", "till", "plant", "water", "wait", "harvest"],
             starterCode: """
-            # Four plots, four harvests. Rocks and ponds block the drone.
-            # Good luck, operator.
+            # Four plots, rocks and a pond. Every
+            # command is in the setup. Plan your route.
 
 
             """),

@@ -69,8 +69,8 @@ final class GameSession: ObservableObject {
         if body != code { code = body; errorLine = nil }
     }
 
-    /// The read-only drone.py / farm.py for this level.
-    var librarySource: String { DroneLibrary.source(for: level) }
+    /// First line of the player's code in main.py.
+    var firstCodeLine: Int { level.headerLines + 1 }
     var wheat: Int { world.count(of: .wheat) }
 
     // MARK: Controls
@@ -137,9 +137,10 @@ final class GameSession: ObservableObject {
         reset()
         errorLine = nil
         do {
-            let script = try LineScript(source: fullText)
+            let script = try LineScript(source: code, lineOffset: level.headerLines,
+                                        defined: Set(level.commands + level.setupNames))
             guard !script.isEmpty else {
-                log("Write some commands first, like plant().", .warning)
+                log("Write some code first: call a command from the setup.", .warning)
                 return false
             }
             program = script

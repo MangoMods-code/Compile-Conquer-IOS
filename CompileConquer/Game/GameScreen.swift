@@ -6,7 +6,7 @@ struct GameScreen: View {
     let onExit: () -> Void
     let onNext: (() -> Void)?
     @State private var showHint = false
-    @State private var tab = 0
+    @State private var jump: EditorJump?
 
     init(level: LevelSpec, onExit: @escaping () -> Void, onNext: (() -> Void)?) {
         _session = StateObject(wrappedValue: GameSession(level: level))
@@ -147,21 +147,15 @@ struct GameScreen: View {
             .padding(.horizontal, 8)
             .padding(.top, 6)
 
-            fileTabs
+            fileBar
 
-            Group {
-                if tab == 0 {
-                    CodeEditor(text: Binding(get: { session.fullText }, set: { session.setFullText($0) }),
-                               activeLine: session.activeLine,
-                               errorLine: session.errorLine,
-                               editable: !session.state.isActive,
-                               lockedLength: (session.level.header as NSString).length,
-                               commands: session.level.commands)
-                } else {
-                    CodeEditor(text: .constant(session.librarySource),
-                               activeLine: nil, errorLine: nil, editable: false)
-                }
-            }
+            CodeEditor(text: Binding(get: { session.fullText }, set: { session.setFullText($0) }),
+                       activeLine: session.activeLine,
+                       errorLine: session.errorLine,
+                       editable: !session.state.isActive,
+                       lockedLength: (session.level.header as NSString).length,
+                       commands: session.level.commands,
+                       jump: jump)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
             .padding(.horizontal, 6)
@@ -172,38 +166,48 @@ struct GameScreen: View {
         .background(Theme.panel)
     }
 
-    private var fileTabs: some View {
-        HStack(spacing: 4) {
-            tabButton("main.py", icon: "pencil", index: 0)
-            tabButton("drone.py", icon: "lock.fill", index: 1)
+    private var fileBar: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "doc.text").font(.system(size: 10, weight: .bold))
+                Text("main.py").font(Theme.mono(12, .bold))
+            }
+            .foregroundStyle(Theme.text)
             Spacer()
+            jumpButton("Setup", icon: "lock.fill", line: 1)
+            jumpButton("Your code", icon: "pencil", line: session.firstCodeLine)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
+        .onAppear {
+            // First visit: start at the top so the setup gets read. After that, open at your code.
+            let firstVisit = !GameProgress.shared.hasSavedCode(for: session.level)
+            jump = EditorJump(line: firstVisit ? 1 : session.firstCodeLine)
+        }
     }
 
-    private func tabButton(_ title: String, icon: String, index: Int) -> some View {
-        Button { tab = index } label: {
+    private func jumpButton(_ title: String, icon: String, line: Int) -> some View {
+        Button { jump = EditorJump(line: line) } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 9, weight: .bold))
-                Text(title).font(Theme.mono(12, .bold))
+                Text(title).font(Theme.mono(11, .bold))
             }
-            .foregroundStyle(tab == index ? Color.black : Theme.dim)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Capsule().fill(tab == index ? Theme.accent : Theme.panelHi))
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill(Theme.panelHi))
         }
         .buttonStyle(.plain)
     }
 
     private var controls: some View {
         HStack(spacing: 6) {
-            Button { tab = 0; session.runOrPause() } label: {
+            Button { session.runOrPause() } label: {
                 Label(session.state == .running ? "Pause" : (session.state == .paused ? "Resume" : "Run"),
                       systemImage: session.state == .running ? "pause.fill" : "play.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PillButtonStyle())
 
-            Button { tab = 0; session.step() } label: { Image(systemName: "forward.frame.fill") }
+            Button { session.step() } label: { Image(systemName: "forward.frame.fill") }
                 .buttonStyle(PillButtonStyle(color: Theme.text, filled: false))
 
             Button { session.reset() } label: { Image(systemName: "arrow.counterclockwise") }
