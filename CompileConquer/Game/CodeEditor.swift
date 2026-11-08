@@ -265,16 +265,21 @@ final class CodeTextView: UITextView {
         fitContentSize()
     }
 
-    /// UITextView sometimes under-measures long text and stops scrolling early, so measure it ourselves.
+    /// Space the keyboard covers at the bottom.
+    private var keyboardOverlap: CGFloat = 0
+
+    /// UITextView sometimes under-measures long text and stops scrolling early. Instead of fighting
+    /// its content size, measure the text ourselves and add any shortfall as extra bottom inset.
     private func fitContentSize() {
         layoutManager.ensureLayout(for: textContainer)
         let used = layoutManager.usedRect(for: textContainer)
         let extra = layoutManager.extraLineFragmentRect
-        let bottom = max(used.maxY, extra.maxY)
-        let height = ceil(bottom + textContainerInset.top + textContainerInset.bottom)
-        let size = CGSize(width: bounds.width, height: max(height, bounds.height))
-        if abs(contentSize.height - size.height) > 0.5 || abs(contentSize.width - size.width) > 0.5 {
-            contentSize = size
+        let needed = ceil(max(used.maxY, extra.maxY) + textContainerInset.top + textContainerInset.bottom)
+        let shortfall = max(0, needed - contentSize.height)
+        let bottom = keyboardOverlap + shortfall
+        if abs(contentInset.bottom - bottom) > 0.5 {
+            contentInset.bottom = bottom
+            verticalScrollIndicatorInsets.bottom = keyboardOverlap
         }
     }
 
@@ -346,7 +351,9 @@ final class CodeTextView: UITextView {
         let mine = convert(bounds, to: window)
         let hiding = note.name == UIResponder.keyboardWillHideNotification || end.minY >= window.bounds.maxY
         let overlap = hiding ? 0 : max(0, mine.maxY - end.minY)
-        contentInset.bottom = overlap
+        keyboardOverlap = overlap
+        fitContentSize()
+        contentInset.bottom = max(contentInset.bottom, overlap)
         verticalScrollIndicatorInsets.bottom = overlap
         if overlap > 0 { DispatchQueue.main.async { self.scrollRangeToVisible(self.selectedRange) } }
     }
