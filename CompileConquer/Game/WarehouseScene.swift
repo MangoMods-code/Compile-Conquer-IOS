@@ -152,8 +152,7 @@ final class WarehouseScene: SKScene, WorldRenderer {
         let lights = max(2, (w.width + 1) / 3)
         for k in 0..<lights {
             let d = tileSize * 3.4
-            let light = SKSpriteNode(texture: WarehouseArt.glow(UIColor(red: 1, green: 0.93, blue: 0.75, alpha: 0.13), key: "light", d),
-                                     size: CGSize(width: d, height: d))
+            let light = SKSpriteNode(texture: WarehouseArt.lightPool(d), size: CGSize(width: d, height: d))
             light.blendMode = .add
             let fx = (CGFloat(k) + 0.5) / CGFloat(lights)
             light.position = CGPoint(x: origin.x + tileSize * CGFloat(w.width) * fx, y: origin.y + tileSize * CGFloat(w.height) * 0.5)

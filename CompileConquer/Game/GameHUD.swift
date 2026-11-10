@@ -93,7 +93,9 @@ struct GoalChip: View {
         HStack(spacing: 4) {
             if world == .farm {
                 Circle().fill(color).frame(width: 8, height: 8)
-                if showLabel { Text(item.label).font(Theme.mono(10)).foregroundStyle(.white.opacity(0.75)) }
+                Text(showLabel ? item.label : String(item.label.prefix(1)))
+                    .font(Theme.mono(10))
+                    .foregroundStyle(.white.opacity(0.75))
             } else {
                 Image(systemName: "shippingbox.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(color)
             }

@@ -445,6 +445,11 @@ enum FarmArt {
                     }
                 }
             }
+            // Shade everything outside the field a little so the field stands out.
+            c.setFillColor(rgb(0, 0.04, 0.02, 0.3).cgColor)
+            c.fill(CGRect(origin: .zero, size: sz))
+            radial(c, [rgb(0.5, 0.9, 0.5, 0.16), rgb(0.5, 0.9, 0.5, 0)], center: CGPoint(x: field.midX, y: field.midY),
+                   radius: max(field.width, field.height) * 0.95)
         }
     }
 

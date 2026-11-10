@@ -324,43 +324,55 @@ final class FarmScene: SKScene {
         }
     }
 
-    /// A small "age/GROW_TIME" tag on each crop so you can see when it will be ripe.
+    /// A growth bar under each crop (with its age in numbers when tiles are big enough to read it),
+    /// so you can see when it will be ripe.
     private func updateAgeBadge(_ i: Int, crop: Crop?, at p: CGPoint) {
         guard let crop, !decorative, AppSettings.shared.showCropAges else {
             ageBadges[i]?.removeFromParent()
             ageBadges[i] = nil
             return
         }
-        let text = "\(min(crop.growth, crop.growTime))/\(crop.growTime)"
+        let barW = tileSize * 0.72
+        let barH = max(3, tileSize * 0.075)
         let badge: SKNode
         if let existing = ageBadges[i] {
             badge = existing
         } else {
             badge = SKNode()
-            let bg = SKShapeNode(rectOf: CGSize(width: tileSize * 0.42, height: tileSize * 0.2), cornerRadius: tileSize * 0.1)
-            bg.name = "bg"
-            bg.lineWidth = 1
-            badge.addChild(bg)
-            let label = SKLabelNode(fontNamed: "Menlo-Bold")
-            label.name = "label"
-            label.fontSize = max(8, tileSize * 0.14)
-            label.verticalAlignmentMode = .center
-            label.horizontalAlignmentMode = .center
-            badge.addChild(label)
-            badge.position = CGPoint(x: p.x + tileSize * 0.26, y: p.y - tileSize * 0.36)
+            let track = SKShapeNode(rect: CGRect(x: -barW / 2 - 1, y: -barH / 2 - 1, width: barW + 2, height: barH + 2), cornerRadius: barH / 2 + 1)
+            track.fillColor = UIColor(white: 0, alpha: 0.62)
+            track.strokeColor = .clear
+            badge.addChild(track)
+            let fill = SKSpriteNode(color: .white, size: CGSize(width: barW, height: barH))
+            fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+            fill.position = CGPoint(x: -barW / 2, y: 0)
+            fill.name = "fill"
+            fill.zPosition = 1
+            badge.addChild(fill)
+            if tileSize >= 46 {
+                let label = SKLabelNode(fontNamed: "Menlo-Bold")
+                label.name = "label"
+                label.fontSize = max(8, tileSize * 0.15)
+                label.verticalAlignmentMode = .center
+                label.horizontalAlignmentMode = .center
+                label.position = CGPoint(x: 0, y: barH / 2 + label.fontSize * 0.7)
+                label.zPosition = 2
+                badge.addChild(label)
+            }
+            badge.position = CGPoint(x: p.x, y: p.y - tileSize * 0.41)
             badge.zPosition = 7
             board.addChild(badge)
             ageBadges[i] = badge
         }
         let ripe = crop.ripe
+        if let fill = badge.childNode(withName: "fill") as? SKSpriteNode {
+            fill.xScale = max(0.04, CGFloat(crop.progress))
+            fill.color = ripe ? UIColor(red: 0.99, green: 0.8, blue: 0.28, alpha: 1) : UIColor(red: 0.45, green: 0.88, blue: 0.5, alpha: 1)
+        }
+        let text = "\(min(crop.growth, crop.growTime))/\(crop.growTime)"
         if let label = badge.childNode(withName: "label") as? SKLabelNode, label.text != text {
             label.text = text
-            label.fontColor = ripe ? UIColor(red: 0.15, green: 0.1, blue: 0, alpha: 1) : .white
-            if label.parent != nil, !ripe { badge.run(.sequence([.scale(to: 1.25, duration: 0.08), .scale(to: 1, duration: 0.12)])) }
-        }
-        if let bg = badge.childNode(withName: "bg") as? SKShapeNode {
-            bg.fillColor = ripe ? UIColor(red: 0.98, green: 0.8, blue: 0.3, alpha: 0.95) : UIColor(white: 0, alpha: 0.6)
-            bg.strokeColor = ripe ? UIColor(red: 1, green: 0.95, blue: 0.7, alpha: 1) : UIColor(white: 1, alpha: 0.25)
+            label.fontColor = ripe ? UIColor(red: 1, green: 0.88, blue: 0.45, alpha: 1) : .white
         }
     }
 
@@ -390,13 +402,14 @@ final class FarmScene: SKScene {
     /// A faint dot where the drone has been, so the route of a run stays visible.
     private func addTrail(at point: CGPoint) {
         guard !decorative else { return }
-        let dot = SKShapeNode(circleOfRadius: max(1.5, tileSize * 0.05))
-        dot.fillColor = UIColor(white: 1, alpha: 0.55)
-        dot.strokeColor = .clear
+        let dot = SKShapeNode(circleOfRadius: max(2, tileSize * 0.065))
+        dot.fillColor = UIColor(white: 1, alpha: 0.8)
+        dot.strokeColor = UIColor(white: 0, alpha: 0.25)
+        dot.lineWidth = 1
         dot.position = point
-        dot.zPosition = 2.6
+        dot.zPosition = 3.5
         board.addChild(dot)
-        dot.run(.fadeAlpha(to: 0.28, duration: 1.2))
+        dot.run(.fadeAlpha(to: 0.5, duration: 1.2))
         trail.append(dot)
         if trail.count > 160 { trail.removeFirst().removeFromParent() }
     }

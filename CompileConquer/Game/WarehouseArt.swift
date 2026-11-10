@@ -256,6 +256,14 @@ enum WarehouseArt {
         }
     }
 
+    /// A soft pool of warm light on the floor.
+    static func lightPool(_ s: CGFloat) -> SKTexture {
+        texture("lightpool", CGSize(width: s, height: s)) { c, sz in
+            radial(c, [rgb(1, 0.93, 0.74, 0.20), rgb(1, 0.93, 0.74, 0.08), rgb(1, 0.93, 0.74, 0)],
+                   center: CGPoint(x: sz.width / 2, y: sz.height / 2), radius: sz.width / 2)
+        }
+    }
+
     static func softShadow(_ s: CGFloat) -> SKTexture {
         texture("wshadow", CGSize(width: s, height: s)) { c, sz in
             radial(c, [rgb(0, 0, 0, 0.45), rgb(0, 0, 0, 0)], center: CGPoint(x: sz.width / 2, y: sz.height / 2), radius: sz.width / 2)
@@ -307,6 +315,10 @@ enum WarehouseArt {
                     c.strokeEllipse(in: box.insetBy(dx: r * 0.35, dy: r * 0.35))
                 }
             }
+
+            // Dim the yard so the lit floor is the brightest thing on screen.
+            c.setFillColor(rgb(0.03, 0.04, 0.06, 0.55).cgColor)
+            c.fill(CGRect(origin: .zero, size: sz))
 
             // walls
             let wallW = max(6, tile * 0.22)
