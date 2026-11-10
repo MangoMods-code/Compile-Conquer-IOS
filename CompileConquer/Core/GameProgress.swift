@@ -12,7 +12,10 @@ final class GameProgress: ObservableObject {
         starMap = (UserDefaults.standard.dictionary(forKey: "cc.stars") as? [String: Int]) ?? [:]
     }
 
-    func stars(for id: String) -> Int { starMap[id] ?? 0 }
+    /// Screenshot/UI tests launch with `-uitest.allStars N` to see every level as cleared.
+    private let testStars = UserDefaults.standard.integer(forKey: "uitest.allStars")
+
+    func stars(for id: String) -> Int { testStars > 0 ? testStars : (starMap[id] ?? 0) }
 
     func record(stars s: Int, for id: String) {
         guard s > stars(for: id) else { return }

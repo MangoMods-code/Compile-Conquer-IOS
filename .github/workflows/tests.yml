@@ -5,8 +5,11 @@ name: Tests
 # never changes app version numbers.
 on:
   push:
-    branches: [main]
+    branches: [main, rework]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: tests-${{ github.ref }}
@@ -39,6 +42,20 @@ jobs:
             -destination "platform=iOS Simulator,name=$DEVICE" \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|XCTAssert|Fatal error|crash|Executed|TEST (SUCCEEDED|FAILED)" || true
           grep -q "TEST SUCCEEDED" test.log
+
+      # Screenshots taken by UITests/ScreenshotTests.swift go to the ci-screenshots branch
+      # so the look of the game can be reviewed for every change.
+      - name: Publish screenshots
+        if: always()
+        run: |
+          [ -d /tmp/cc-shots ] && ls /tmp/cc-shots/*.png >/dev/null 2>&1 || { echo "no screenshots"; exit 0; }
+          cd /tmp/cc-shots
+          for f in *.png; do sips -Z 1500 "$f" >/dev/null; done
+          git init -q
+          git checkout -q -b ci-screenshots
+          git add -A
+          git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-screenshots
 
       - name: Crash reports
         if: failure()
