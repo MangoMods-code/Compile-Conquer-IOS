@@ -308,6 +308,7 @@ final class CodeTextView: UITextView {
         layout.addTextContainer(container)
         let tv = CodeTextView(frame: .zero, textContainer: container)
         tv.storageRef = storage
+        tv.contentMode = .redraw
         return tv
     }
 
@@ -359,9 +360,16 @@ final class CodeTextView: UITextView {
 
     // MARK: Content size
 
+    private var drawnSize = CGSize.zero
+
     override func layoutSubviews() {
         super.layoutSubviews()
         fitContentSize()
+        // The gutter is drawn by hand; without this a resize would stretch the old drawing.
+        if drawnSize != bounds.size {
+            drawnSize = bounds.size
+            setNeedsDisplay()
+        }
     }
 
     /// Space the keyboard covers at the bottom.

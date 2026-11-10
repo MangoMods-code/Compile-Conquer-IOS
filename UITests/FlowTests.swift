@@ -32,7 +32,15 @@ final class FlowTests: XCTestCase {
     private func tap(_ app: XCUIApplication, _ id: String, file: StaticString = #filePath, line: UInt = #line) {
         let b = app.buttons[id]
         XCTAssertTrue(b.waitForExistence(timeout: 8), "button \(id) not found", file: file, line: line)
-        if b.exists { b.tap() }
+        guard b.exists else { return }
+        // Bring it on screen if it's off to one side of a scrolling row.
+        var tries = 0
+        let width = app.windows.firstMatch.frame.width
+        while !b.isHittable, tries < 12 {
+            if b.frame.midX > width * 0.5 { app.swipeLeft(velocity: .slow) } else { app.swipeRight(velocity: .slow) }
+            tries += 1
+        }
+        b.tap()
         usleep(700_000)
     }
 

@@ -9,42 +9,50 @@ struct LevelHUD: View {
     private var level: LevelSpec { session.level }
 
     var body: some View {
-        HStack(spacing: 8) {
-            IconButton(symbol: "chevron.left", size: 34, fill: Color.black.opacity(0.55), action: onExit)
-                .accessibilityIdentifier("back")
-            VStack(alignment: .leading, spacing: 0) {
-                Text("\(level.worldLabel) \(level.number) · \(level.concept.uppercased())")
-                    .font(Theme.mono(9, .bold))
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                Text(level.title)
-                    .font(Theme.mono(14, .heavy))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                IconButton(symbol: "chevron.left", size: 32, fill: Color.black.opacity(0.55), action: onExit)
+                    .accessibilityIdentifier("back")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(level.worldLabel) \(level.number) · \(level.concept.uppercased())")
+                        .font(Theme.mono(9, .bold))
+                        .foregroundStyle(tint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(level.title)
+                        .font(Theme.mono(14, .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 4)
+                Menu {
+                    Button { session.newMap() } label: { Label("New map", systemImage: "dice") }
+                        .disabled(session.state.isActive)
+                    Text("Map code \(session.seedText)")
+                } label: {
+                    Image(systemName: "dice.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+                }
+                .accessibilityIdentifier("mapMenu")
             }
-            Spacer(minLength: 4)
-            ForEach(session.goalItems) { item in
-                GoalChip(item: item, world: level.world)
-            }
-            tickChip
-            Menu {
-                Button { session.newMap() } label: { Label("New map", systemImage: "dice") }
-                    .disabled(session.state.isActive)
-                Text("Map code \(session.seedText)")
-            } label: {
-                Image(systemName: "dice.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.black.opacity(0.55)))
-                    .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+            HStack(spacing: 6) {
+                ForEach(session.goalItems) { item in
+                    GoalChip(item: item, world: level.world, showLabel: session.goalItems.count <= 2)
+                }
+                Spacer(minLength: 4)
+                tickChip
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
         .background(
-            LinearGradient(colors: [Color.black.opacity(0.72), Color.black.opacity(0.45), .clear], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.black.opacity(0.75), Color.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
         )
     }
 
@@ -53,12 +61,14 @@ struct LevelHUD: View {
         let ticks = session.world.ticks
         let stars = session.stars(forTicks: ticks)
         return HStack(spacing: 5) {
-            Image(systemName: "clock.fill").font(.system(size: 10, weight: .bold))
-            Text("\(ticks)").font(Theme.mono(13, .bold)).monospacedDigit()
+            Image(systemName: "clock.fill").font(.system(size: 9, weight: .bold))
+            Text("\(ticks)").font(Theme.mono(12, .bold)).monospacedDigit()
+            Text("/ \(session.threeStarTicks)").font(Theme.mono(10)).foregroundStyle(.white.opacity(0.6))
             StarsView(count: stars, size: 8)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 8).padding(.vertical, 6)
+        .fixedSize()
+        .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Capsule().fill(Color.black.opacity(0.55)))
         .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
         .accessibilityIdentifier("ticks")
@@ -68,6 +78,7 @@ struct LevelHUD: View {
 struct GoalChip: View {
     let item: GoalItem
     let world: WorldKind
+    var showLabel = true
 
     private var color: Color {
         switch item.label {
@@ -81,19 +92,21 @@ struct GoalChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if world == .farm {
-                Circle().fill(color).frame(width: 9, height: 9)
+                Circle().fill(color).frame(width: 8, height: 8)
+                if showLabel { Text(item.label).font(Theme.mono(10)).foregroundStyle(.white.opacity(0.75)) }
             } else {
                 Image(systemName: "shippingbox.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(color)
             }
             Text("\(item.have)/\(item.need)")
-                .font(Theme.mono(13, .bold))
+                .font(Theme.mono(12, .bold))
                 .monospacedDigit()
                 .foregroundStyle(item.done ? Theme.accent : .white)
             if item.done {
                 Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundStyle(Theme.accent)
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
+        .fixedSize()
+        .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Capsule().fill(Color.black.opacity(0.55)))
         .overlay(Capsule().stroke(item.done ? Theme.accent.opacity(0.6) : Theme.line, lineWidth: 1))
         .accessibilityLabel("\(item.label) \(item.have) of \(item.need)")

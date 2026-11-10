@@ -169,7 +169,7 @@ struct LevelSelectView: View {
     @State private var pulse = false
 
     private let spacing: CGFloat = 148
-    private let pathHeight: CGFloat = 236
+    private let pathHeight: CGFloat = 190
     private var tint: Color { Theme.tint(world.kind) }
 
     /// The level to play next: the first open one without a star.
@@ -177,8 +177,12 @@ struct LevelSelectView: View {
         world.levels.first { progress.isUnlocked($0, in: world.levels) && progress.stars(for: $0.id) == 0 }
     }
 
+    /// How far down each node sits; alternating gives the path its wave.
+    private func drop(_ i: Int) -> CGFloat { i % 2 == 0 ? 0 : 36 }
+
+    /// The middle of a node's circle, in the row's coordinates.
     private func center(_ i: Int) -> CGPoint {
-        CGPoint(x: 80 + CGFloat(i) * spacing, y: 72 + (i % 2 == 0 ? 0 : 34))
+        CGPoint(x: (CGFloat(i) + 0.5) * spacing, y: drop(i) + 39)
     }
 
     var body: some View {
@@ -200,18 +204,20 @@ struct LevelSelectView: View {
                 }
                 .padding(.horizontal, 20)
 
+                Spacer(minLength: 0)
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        ZStack(alignment: .topLeading) {
-                            trail
+                        HStack(alignment: .top, spacing: 0) {
                             ForEach(Array(world.levels.enumerated()), id: \.element.id) { i, level in
                                 node(level, index: i)
-                                    .position(x: center(i).x, y: center(i).y + 62)
+                                    .frame(width: spacing)
+                                    .padding(.top, drop(i))
                                     .id(level.id)
                             }
                         }
-                        .frame(width: 160 + CGFloat(max(0, world.levels.count - 1)) * spacing, height: pathHeight)
-                        .padding(.horizontal, 12)
+                        .frame(height: pathHeight, alignment: .top)
+                        .background(alignment: .topLeading) { trail }
+                        .padding(.horizontal, 24)
                     }
                     .onAppear {
                         if let c = current { proxy.scrollTo(c.id, anchor: .center) }
@@ -220,6 +226,7 @@ struct LevelSelectView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, 14)
+            .padding(.bottom, 10)
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
@@ -241,7 +248,6 @@ struct LevelSelectView: View {
                            style: StrokeStyle(lineWidth: cleared ? 4 : 3, lineCap: .round, dash: cleared ? [] : [2, 9]))
             }
         }
-        .frame(height: pathHeight)
         .allowsHitTesting(false)
     }
 

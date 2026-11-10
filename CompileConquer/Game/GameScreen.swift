@@ -67,7 +67,7 @@ struct GameScreen: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showHandbook) { HandbookView(level: level) }
         .onAppear {
-            session.setTopInset(48)
+            session.setTopInset(72)
             SoundFX.shared.setTrack(level.world == .farm ? .farm : .warehouse)
             // First visit: start at the top so the setup gets read. After that, open at your code.
             let firstVisit = !GameProgress.shared.hasSavedCode(for: level)
@@ -142,14 +142,15 @@ struct GameScreen: View {
         HStack(spacing: 5) {
             HStack(spacing: 4) {
                 Image(systemName: "doc.text.fill").font(.system(size: 10, weight: .bold))
-                Text("main.py").font(Theme.mono(12, .bold))
+                Text("main.py").font(Theme.mono(12, .bold)).lineLimit(1)
             }
+            .fixedSize()
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.panelHi))
 
-            jumpButton("Setup", icon: "lock.fill", line: 1)
-            jumpButton("Your code", icon: "pencil", line: session.firstCodeLine)
+            jumpButton("Setup", id: "Setup", icon: "lock.fill", line: 1)
+            jumpButton("Code", id: "Your code", icon: "pencil", line: session.firstCodeLine)
             Spacer(minLength: 2)
             IconButton(symbol: "info", size: 28, tint: Theme.blue) { session.showIntro = true }
                 .accessibilityIdentifier("brief")
@@ -176,18 +177,19 @@ struct GameScreen: View {
         .padding(.horizontal, 8)
     }
 
-    private func jumpButton(_ title: String, icon: String, line: Int) -> some View {
+    private func jumpButton(_ title: String, id: String, icon: String, line: Int) -> some View {
         Button { jump = EditorJump(line: line) } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 9, weight: .bold))
-                Text(title).font(Theme.mono(11, .bold))
+                Text(title).font(Theme.mono(11, .bold)).lineLimit(1)
             }
+            .fixedSize()
             .foregroundStyle(Theme.dim)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 7).stroke(Theme.line, lineWidth: 1))
         }
         .buttonStyle(PressStyle())
-        .accessibilityIdentifier(title)
+        .accessibilityIdentifier(id)
     }
 
     /// Scrub through the recorded run, forwards or backwards.
