@@ -32,25 +32,17 @@ final class FlowTests: XCTestCase {
     private func tap(_ app: XCUIApplication, _ id: String, file: StaticString = #filePath, line: UInt = #line) {
         let b = app.buttons[id]
         XCTAssertTrue(b.waitForExistence(timeout: 8), "button \(id) not found", file: file, line: line)
-        guard b.exists else { return }
-        // Bring it on screen if it's off to one side of a scrolling row.
-        var tries = 0
-        let width = app.windows.firstMatch.frame.width
-        while b.frame.midX < 30 || b.frame.midX > width - 30, tries < 12 {
-            if b.frame.midX > width * 0.5 { app.swipeLeft(velocity: .slow) } else { app.swipeRight(velocity: .slow) }
-            usleep(400_000)
-            tries += 1
-        }
-        b.tap()
+        if b.exists { b.tap() }
         usleep(700_000)
     }
 
-    private func open(_ app: XCUIApplication, world: String, level: String) {
-        tap(app, "play")
-        tap(app, "world.\(world)")
-        tap(app, "level.\(level)")
+    /// Launches straight into a level with the given code already typed in.
+    private func launchLevel(_ levelID: String, _ python: String) -> XCUIApplication {
+        let app = launch(unlocked + code(levelID, python) + ["-uitest.open", levelID])
         sleep(2)
-        XCTAssertEqual(app.state, .runningForeground, "app crashed opening \(level)")
+        XCTAssertEqual(app.state, .runningForeground, "app crashed opening \(levelID)")
+        XCTAssertTrue(app.buttons["Run"].waitForExistence(timeout: 10), "level screen didn't appear for \(levelID)")
+        return app
     }
 
     private func waitForWin(_ app: XCUIApplication, timeout: TimeInterval = 150, file: StaticString = #filePath, line: UInt = #line) {
@@ -83,13 +75,25 @@ final class FlowTests: XCTestCase {
         shot("08-next-level-intro")
     }
 
-    func testFarmLoopsAndVariables() {
-        let app = launch(unlocked + code("py.farm.9", PySolutions.intended["py.farm.9"] ?? ""))
+    func testLevelMapsScroll() {
+        let app = launch(unlocked)
         tap(app, "play")
         tap(app, "world.farm")
         shot("10-levels-farm-cleared")
-        tap(app, "level.py.farm.9")
-        sleep(2)
+        // The path is wider than the screen: dragging it must bring later levels into view.
+        let last = app.buttons["level.py.farm.10"]
+        let before = last.frame.midX
+        app.scrollViews.firstMatch.swipeLeft()
+        sleep(1)
+        shot("10b-levels-farm-scrolled")
+        XCTAssertLessThan(last.frame.midX, before - 100, "the level map didn't scroll")
+        tap(app, "back")
+        tap(app, "world.warehouse")
+        shot("20-levels-warehouse")
+    }
+
+    func testFarmLoopsAndVariables() {
+        let app = launchLevel("py.farm.9", PySolutions.intended["py.farm.9"] ?? "")
         tap(app, "Run")
         sleep(3)
         tap(app, "tab.Var")
@@ -99,28 +103,28 @@ final class FlowTests: XCTestCase {
     }
 
     func testFarmIfLevelAndBigField() {
-        var app = launch(unlocked + code("py.farm.8", PySolutions.intended["py.farm.8"] ?? ""))
-        open(app, world: "farm", level: "py.farm.8")
+        var app = launchLevel("py.farm.8", PySolutions.intended["py.farm.8"] ?? "")
         shot("13-farm-if-level")
         tap(app, "Run")
         waitForWin(app)
         app.terminate()
 
-        app = launch(unlocked + code("py.farm.10", PySolutions.intended["py.farm.10"] ?? ""))
-        open(app, world: "farm", level: "py.farm.10")
+        app = launchLevel("py.farm.10", PySolutions.intended["py.farm.10"] ?? "")
         tap(app, "Run")
         sleep(6)
         shot("14-farm-festival-running")
         waitForWin(app)
+        app.terminate()
+
+        app = launchLevel("py.farm.7", PySolutions.intended["py.farm.7"] ?? "")
+        tap(app, "Run")
+        sleep(8)
+        shot("15-farm-market-garden")
+        waitForWin(app)
     }
 
     func testWarehouse() {
-        var app = launch(unlocked + code("py.warehouse.stock", PySolutions.intended["py.warehouse.stock"] ?? ""))
-        tap(app, "play")
-        tap(app, "world.warehouse")
-        shot("20-levels-warehouse")
-        tap(app, "level.py.warehouse.stock")
-        sleep(2)
+        var app = launchLevel("py.warehouse.stock", PySolutions.intended["py.warehouse.stock"] ?? "")
         shot("21-warehouse-open")
         tap(app, "Run")
         sleep(4)
@@ -129,19 +133,24 @@ final class FlowTests: XCTestCase {
         shot("23-warehouse-win")
         app.terminate()
 
-        app = launch(unlocked + code("py.warehouse.6", PySolutions.warehouse))
-        open(app, world: "warehouse", level: "py.warehouse.6")
+        app = launchLevel("py.warehouse.6", PySolutions.warehouse)
         tap(app, "Run")
         sleep(5)
         shot("24-night-shift-running")
         waitForWin(app, timeout: 240)
+        app.terminate()
+
+        app = launchLevel("py.warehouse.sort", PySolutions.intended["py.warehouse.sort"] ?? "")
+        tap(app, "Run")
+        sleep(5)
+        shot("25-sorting-office")
+        waitForWin(app)
     }
 
     func testFailureReviewAndTools() {
         // A program that bumps into things and then breaks: the run should fail politely.
         let broken = "move(North)\nmove(North)\nmove(North)\nmove(North)\nmove(North)\nprint(\"so far so good\")\nmove(Up)\n"
-        let app = launch(unlocked + code("py.farm.2", broken))
-        open(app, world: "farm", level: "py.farm.2")
+        let app = launchLevel("py.farm.2", broken)
         tap(app, "Run")
         XCTAssertTrue(app.buttons["fixCode"].waitForExistence(timeout: 30), "failure banner never appeared")
         sleep(1)
