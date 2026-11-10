@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct CompileConquerApp: App {
+    init() {
+        SoundFX.shared.prepare()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -11,9 +15,8 @@ struct CompileConquerApp: App {
 }
 
 enum Route: Hashable {
-    case campaigns
-    case worlds(Campaign)
-    case levels(Campaign, WorldInfo)
+    case worlds
+    case levels(WorldInfo)
     case play(LevelSpec)
 }
 
@@ -22,29 +25,36 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            TitleView { path.append(.campaigns) }
-                .navigationDestination(for: Route.self) { route in
-                    destination(route)
+            TitleView(
+                onPlay: { path.append(.worlds) },
+                onContinue: { level in
+                    // Build the whole trail so Back leads through the level map and worlds.
+                    var trail: [Route] = [.worlds]
+                    if let world = WorldInfo.containing(level) { trail.append(.levels(world)) }
+                    trail.append(.play(level))
+                    path = trail
                 }
+            )
+            .navigationDestination(for: Route.self) { route in
+                destination(route)
+            }
         }
         .tint(Theme.accent)
     }
 
     @ViewBuilder private func destination(_ route: Route) -> some View {
         switch route {
-        case .campaigns:
-            CampaignSelectView { path.append(.worlds($0)) }
-        case .worlds(let c):
-            WorldSelectView(campaign: c) { path.append(.levels(c, $0)) }
-        case .levels(_, let w):
+        case .worlds:
+            WorldSelectView { path.append(.levels($0)) }
+        case .levels(let w):
             LevelSelectView(world: w) { path.append(.play($0)) }
         case .play(let level):
             let chapter = WorldInfo.containing(level)?.levels ?? []
             let next = chapter.firstIndex(of: level).flatMap { $0 + 1 < chapter.count ? chapter[$0 + 1] : nil }
             GameScreen(
                 level: level,
-                onExit: { path.removeLast() },
-                onNext: next.map { n -> () -> Void in { path[path.count - 1] = .play(n) } }
+                onExit: { if !path.isEmpty { path.removeLast() } },
+                onNext: next.map { n -> () -> Void in { if !path.isEmpty { path[path.count - 1] = .play(n) } } }
             )
             .id(level.id)
         }

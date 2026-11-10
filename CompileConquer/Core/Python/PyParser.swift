@@ -18,6 +18,15 @@ indirect enum Expr {
     case attr(Expr, String)
     case index(Expr, Expr)
     case ifExp(Expr, Expr, Expr)   // cond, then, else
+    case fstring([FPart])
+    case listComp(Expr, Expr, Expr, Expr?)   // element, target, iterable, condition
+    case slice(Expr, Expr?, Expr?, Expr?)    // value, start, stop, step
+}
+
+/// One piece of an f-string: plain text, or an expression (optionally with a .Nf format).
+enum FPart {
+    case text(String)
+    case expr(Expr, decimals: Int?)
 }
 
 struct Param {
@@ -97,7 +106,18 @@ struct PyParser {
         return out
     }
 
+    /// Parses one expression from a piece of text (used for the {...} parts of f-strings).
+    static func parseExpression(_ source: String, line: Int) throws -> Expr {
+        var p = PyParser(try PyLexer.tokenize(source, lineOffset: line - 1))
+        let e = try p.exprList()
+        guard p.tok.kind == .newline || p.tok.kind == .eof else {
+            throw ScriptError(line: line, message: "SyntaxError: couldn't read the {...} part of this f-string.")
+        }
+        return e
+    }
+
     private mutating func block() throws -> [Stmt] {
+        if isOp("=") { throw err("SyntaxError: use == to compare two values. A single = stores a value.") }
         try expectOp(":", "a `:` at the end of this line")
         if tok.kind != .newline {
             // one-liner: `if x: move(North)`
@@ -358,11 +378,23 @@ struct PyParser {
                 e = .call(e, args, kwargs)
             } else if isOp("[") {
                 advance()
-                if isOp(":") { throw err("Slices like a[1:3] aren't supported yet.") }
-                let idx = try expression()
-                if isOp(":") { throw err("Slices like a[1:3] aren't supported yet.") }
-                try expectOp("]", "`]`")
-                e = .index(e, idx)
+                var first: Expr?
+                if !isOp(":") { first = try expression() }
+                if isOp(":") {
+                    advance()
+                    var stop: Expr?
+                    var step: Expr?
+                    if !isOp("]") && !isOp(":") { stop = try expression() }
+                    if isOp(":") {
+                        advance()
+                        if !isOp("]") { step = try expression() }
+                    }
+                    try expectOp("]", "`]`")
+                    e = .slice(e, first, stop, step)
+                } else {
+                    try expectOp("]", "`]`")
+                    e = .index(e, first!)
+                }
             } else if isOp(".") {
                 advance()
                 guard case .name(let n) = tok.kind else { throw err("SyntaxError: expected a name after the dot.") }
@@ -384,6 +416,9 @@ struct PyParser {
             var str = s
             while case .string(let more) = tok.kind { str += more; advance() }
             return .str(str)
+        case .fstring(let raw):
+            advance()
+            return .fstring(try PyParser.fstringParts(raw, line: t.line))
         case .name(let n):
             switch n {
             case "True": advance(); return .bool(true)
@@ -415,6 +450,18 @@ struct PyParser {
             var items: [Expr] = []
             while !isOp("]") {
                 items.append(try expression())
+                if items.count == 1, isName("for") {
+                    // [x * 2 for x in numbers if x > 0]
+                    advance()
+                    let target = try targetList()
+                    guard isName("in") else { throw err("SyntaxError: a list comprehension looks like [x for x in items].") }
+                    advance()
+                    let iter = try orExpr()
+                    var cond: Expr?
+                    if isName("if") { advance(); cond = try orExpr() }
+                    try expectOp("]", "`]` to close the list")
+                    return .listComp(items[0], target, iter, cond)
+                }
                 if isOp(",") { advance() } else { break }
             }
             try expectOp("]", "`]` to close the list")
@@ -437,6 +484,58 @@ struct PyParser {
         default:
             throw err("SyntaxError: unexpected `\(describe(t.kind))`.")
         }
+    }
+
+    /// Splits f-string text into plain pieces and {expression} pieces.
+    static func fstringParts(_ raw: String, line: Int) throws -> [FPart] {
+        var parts: [FPart] = []
+        var text = ""
+        let chars = Array(raw)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "{" {
+                if i + 1 < chars.count, chars[i + 1] == "{" { text.append("{"); i += 2; continue }
+                var depth = 0
+                var j = i + 1
+                var src = ""
+                var closed = false
+                while j < chars.count {
+                    let d = chars[j]
+                    if d == "(" || d == "[" || d == "{" { depth += 1 }
+                    if d == ")" || d == "]" { depth -= 1 }
+                    if d == "}" {
+                        if depth == 0 { closed = true; break }
+                        depth -= 1
+                    }
+                    src.append(d)
+                    j += 1
+                }
+                guard closed else { throw ScriptError(line: line, message: "SyntaxError: this f-string has a { without a matching }.") }
+                if !text.isEmpty { parts.append(.text(text)); text = "" }
+                // Optional format like {x:.2f}
+                var decimals: Int?
+                if let colon = src.lastIndex(of: ":"), !src[colon...].contains("]"), !src[colon...].contains(")") {
+                    let spec = String(src[src.index(after: colon)...])
+                    if spec.hasPrefix("."), spec.hasSuffix("f"), let n = Int(spec.dropFirst().dropLast()) { decimals = n }
+                    src = String(src[..<colon])
+                }
+                guard !src.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    throw ScriptError(line: line, message: "SyntaxError: the { } in this f-string is empty.")
+                }
+                parts.append(.expr(try parseExpression(src, line: line), decimals: decimals))
+                i = j + 1
+            } else if c == "}" {
+                if i + 1 < chars.count, chars[i + 1] == "}" { i += 1 }
+                text.append("}")
+                i += 1
+            } else {
+                text.append(c)
+                i += 1
+            }
+        }
+        if !text.isEmpty { parts.append(.text(text)) }
+        return parts
     }
 
     private func describe(_ k: TokKind) -> String {

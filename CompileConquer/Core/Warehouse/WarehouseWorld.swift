@@ -61,6 +61,13 @@ struct WarehouseWorld {
     mutating func setTile(_ t: FloorTile, at p: Pos) { tiles[p.y * width + p.x] = t }
     mutating func putCrate(_ c: Crate, at p: Pos) { crates[p] = c }
     mutating func recolor(_ p: Pos, to color: String) { crates[p]?.color = color }
+    mutating func removeAllCrates() { crates.removeAll() }
+
+    var allPositions: [Pos] {
+        var out: [Pos] = []
+        for y in 0..<height { for x in 0..<width { out.append(Pos(x: x, y: y)) } }
+        return out
+    }
 
     mutating func perform(_ command: LoaderCommand) -> CommandOutcome {
         let outcome = apply(command)

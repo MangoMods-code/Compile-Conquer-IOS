@@ -20,6 +20,8 @@ struct CodeEditor: UIViewRepresentable {
     var maxCodeLines: Int = 5000
     /// World commands to offer on the key row.
     var commands: [String] = []
+    /// Other names the setup creates (variables, directions...), for autocomplete.
+    var names: [String] = []
     var jump: EditorJump? = nil
     var fontSize: CGFloat = 13
 
@@ -117,6 +119,85 @@ struct CodeEditor: UIViewRepresentable {
             scrollView.setNeedsDisplay()
         }
 
+        func textViewDidChangeSelection(_ tv: UITextView) {
+            updateCompletions(tv)
+        }
+
+        // MARK: Autocomplete
+
+        private static let keywords = ["for", "while", "if", "elif", "else", "def", "return", "range", "print", "len",
+                                       "True", "False", "None", "and", "not", "break", "continue", "in"]
+
+        /// What can follow a dot after a known name.
+        private static let members: [String: [String]] = [
+            "drone": ["x", "y"],
+            "field": ["tile_at(", "is_open(", "width", "height", "tiles"],
+            "tile": ["ground", "crop", "wet"],
+            "crop": ["kind", "age", "ripe"],
+            "loader": ["x", "y", "carrying"],
+            "floor": ["crates", "crate_at(", "is_open(", "bay_at(", "width", "height"],
+            "crate": ["x", "y", "color"],
+            "carrying": ["color"],
+            "bay": ["x", "y", "color"],
+        ]
+
+        private static let identifier = try! NSRegularExpression(pattern: "[A-Za-z_][A-Za-z_0-9]*")
+
+        private func isIdentifierChar(_ c: unichar) -> Bool {
+            (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95
+        }
+
+        /// Offers names that start with what's being typed, on the key row.
+        func updateCompletions(_ tv: UITextView) {
+            guard let row = tv.inputAccessoryView as? KeyRow, let ctv = tv as? CodeTextView else { return }
+            let sel = tv.selectedRange
+            let ns = tv.text as NSString
+            guard tv.isFirstResponder, sel.length == 0, sel.location <= ns.length, ctv.allowsEdit(at: sel) else {
+                row.setCompletions([], replacing: NSRange(location: 0, length: 0))
+                return
+            }
+            var start = sel.location
+            while start > parent.lockedLength, isIdentifierChar(ns.character(at: start - 1)) { start -= 1 }
+            let prefixRange = NSRange(location: start, length: sel.location - start)
+            let prefix = ns.substring(with: prefixRange)
+
+            // Nothing inside comments.
+            let lineRange = ns.lineRange(for: NSRange(location: sel.location, length: 0))
+            let before = ns.substring(with: NSRange(location: lineRange.location, length: sel.location - lineRange.location))
+            if before.contains("#") {
+                row.setCompletions([], replacing: prefixRange)
+                return
+            }
+
+            var items: [KeyRow.Completion] = []
+            var seen: Set<String> = []
+            func offer(_ label: String, _ insert: String) {
+                guard items.count < 5, !seen.contains(label), label != prefix else { return }
+                guard prefix.isEmpty || label.lowercased().hasPrefix(prefix.lowercased()) else { return }
+                seen.insert(label)
+                items.append(KeyRow.Completion(label: label, insert: insert))
+            }
+
+            if start > 0, ns.character(at: start - 1) == 46 {
+                // After a dot: offer what that object has.
+                var objStart = start - 1
+                while objStart > 0, isIdentifierChar(ns.character(at: objStart - 1)) { objStart -= 1 }
+                let receiver = ns.substring(with: NSRange(location: objStart, length: start - 1 - objStart))
+                for m in Coordinator.members[receiver] ?? [] { offer(m, m) }
+            } else if let first = prefix.unicodeScalars.first, !CharacterSet.decimalDigits.contains(first) {
+                for c in parent.commands { offer(c, c == "move" ? "move(" : c + "()") }
+                for n in parent.names { offer(n, n) }
+                // Names the player has defined themselves.
+                let codeRange = NSRange(location: min(parent.lockedLength, ns.length), length: max(0, ns.length - parent.lockedLength))
+                for m in Coordinator.identifier.matches(in: tv.text, range: codeRange) where items.count < 5 {
+                    if NSLocationInRange(sel.location, m.range) || NSMaxRange(m.range) == sel.location { continue }
+                    offer(ns.substring(with: m.range), ns.substring(with: m.range))
+                }
+                for k in Coordinator.keywords { offer(k, k) }
+            }
+            row.setCompletions(items, replacing: prefixRange)
+        }
+
         func textView(_ tv: UITextView, shouldChangeTextIn range: NSRange, replacementText s: String) -> Bool {
             guard let ctv = tv as? CodeTextView else { return true }
             if !ctv.allowsEdit(at: range) {
@@ -198,13 +279,13 @@ enum CodeStyle {
         func rx(_ p: String) -> NSRegularExpression { try! NSRegularExpression(pattern: p) }
         return [
             (rx("\\b(for|while|if|elif|else|def|return|in|and|or|not|is|break|continue|pass|global|True|False|None)\\b"), UIColor(red: 0.85, green: 0.5, blue: 0.95, alpha: 1)),
-            (rx("\\b(print|range|len|abs|min|max|int|str|float|list|bool|round)(?=\\s*\\()"), UIColor(red: 0.5, green: 0.85, blue: 0.95, alpha: 1)),
+            (rx("\\b(print|range|len|abs|min|max|sum|int|str|float|list|bool|round|sorted|enumerate|zip|reversed|any|all)(?=\\s*\\()"), UIColor(red: 0.5, green: 0.85, blue: 0.95, alpha: 1)),
             (rx("\\b(move|till|plant|water|harvest|wait|tick|pick|drop|scan)(?=\\s*\\()"), UIColor(red: 0.4, green: 0.75, blue: 1, alpha: 1)),
             (rx("(?<=\\.)[a-z_]+"), UIColor(red: 0.55, green: 0.85, blue: 0.8, alpha: 1)),
-            (rx("\\b(field|drone|stock|tile|GOAL|GROW_TIME|Field|Crop|floor|loader|crate|BAYS|Bay|shipped|Floor)\\b"), UIColor(red: 1, green: 0.55, blue: 0.7, alpha: 1)),
-            (rx("\\b(North|East|South|West|Wheat)\\b"), UIColor(red: 0.98, green: 0.78, blue: 0.3, alpha: 1)),
+            (rx("\\b(field|drone|stock|tile|crop|GOAL|GROW_TIME|MAX_LOST|lost|Field|Crop|floor|loader|crate|bay|BAYS|Bay|shipped|Floor)\\b"), UIColor(red: 1, green: 0.55, blue: 0.7, alpha: 1)),
+            (rx("\\b(North|East|South|West|Wheat|Carrot|Pumpkin)\\b"), UIColor(red: 0.98, green: 0.78, blue: 0.3, alpha: 1)),
             (rx("\\b\\d+(\\.\\d+)?\\b"), UIColor(red: 1, green: 0.6, blue: 0.4, alpha: 1)),
-            (rx("(\"[^\"\\n]*\"|'[^'\\n]*')"), UIColor(red: 0.6, green: 0.9, blue: 0.5, alpha: 1)),
+            (rx("f?(\"[^\"\\n]*\"|'[^'\\n]*')"), UIColor(red: 0.6, green: 0.9, blue: 0.5, alpha: 1)),
             (rx("#[^\\n]*"), UIColor(white: 0.45, alpha: 1)),
         ]
     }()
@@ -428,14 +509,23 @@ final class CodeTextView: UITextView {
 
 /// The row of coding keys that sits on top of the keyboard.
 final class KeyRow: UIInputView {
+    struct Completion {
+        let label: String
+        let insert: String
+    }
+
     private weak var target: UITextView?
     private let onInsert: () -> Void
     private let keys: [(label: String, insert: String)]
+    private let stack = UIStackView()
+    private var completionViews: [UIView] = []
+    private var completions: [Completion] = []
+    private var completionRange = NSRange(location: 0, length: 0)
 
     init(target: UITextView, commands: [String], onInsert: @escaping () -> Void) {
         self.target = target
         self.onInsert = onInsert
-        var k: [(label: String, insert: String)] = [("⇥", "    "), ("( )", "()"), (":", ":"), ("=", " = "), ("==", " == "), ("\" \"", "\"\"")]
+        var k: [(label: String, insert: String)] = [("←", "←"), ("→", "→"), ("⇥", "    "), ("( )", "()"), (":", ":"), ("=", " = "), ("==", " == "), ("\" \"", "\"\""), ("[ ]", "[]"), (".", ".")]
         for c in commands {
             if c == "move" {
                 k.append(("move(", "move("))
@@ -452,7 +542,6 @@ final class KeyRow: UIInputView {
         let scroll = UIScrollView()
         scroll.showsHorizontalScrollIndicator = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        let stack = UIStackView()
         stack.axis = .horizontal
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -508,14 +597,60 @@ final class KeyRow: UIInputView {
         return b
     }
 
+    /// Shows autocomplete suggestions in front of the regular keys.
+    func setCompletions(_ items: [Completion], replacing range: NSRange) {
+        completionRange = range
+        if items.map(\.label) == completions.map(\.label) { return }
+        completions = items
+        for v in completionViews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
+        completionViews = []
+        for (i, item) in items.enumerated() {
+            var cfg = UIButton.Configuration.filled()
+            cfg.title = item.label
+            cfg.baseBackgroundColor = UIColor(red: 0.24, green: 0.86, blue: 0.52, alpha: 0.9)
+            cfg.baseForegroundColor = .black
+            cfg.cornerStyle = .medium
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
+            cfg.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
+                var a = a
+                a.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .bold)
+                return a
+            }
+            let b = UIButton(configuration: cfg)
+            b.addAction(UIAction { [weak self] _ in self?.complete(i) }, for: .touchUpInside)
+            stack.insertArrangedSubview(b, at: i)
+            completionViews.append(b)
+        }
+    }
+
+    private func complete(_ i: Int) {
+        guard let tv = target, i < completions.count else { return }
+        let length = (tv.text as NSString).length
+        guard NSMaxRange(completionRange) <= length else { return }
+        let item = completions[i]
+        tv.selectedRange = completionRange
+        tv.insertText(item.insert)
+        UIDevice.current.playInputClick()
+        onInsert()
+    }
+
     private func tapped(_ i: Int) {
         guard let tv = target else { return }
         let key = keys[i]
+        if key.insert == "←" || key.insert == "→" {
+            let length = (tv.text as NSString).length
+            let sel = tv.selectedRange
+            let loc = key.insert == "←" ? max(0, sel.location - 1) : min(length, NSMaxRange(sel) + 1)
+            tv.selectedRange = NSRange(location: loc, length: 0)
+            tv.scrollRangeToVisible(tv.selectedRange)
+            UIDevice.current.playInputClick()
+            return
+        }
         if let ctv = tv as? CodeTextView, !ctv.allowsEdit(at: tv.selectedRange) {
             ctv.flashLocked()
             return
         }
-        if key.insert == "()" || key.insert == "\"\"" {
+        if key.insert == "()" || key.insert == "\"\"" || key.insert == "[]" {
             tv.insertText(key.insert)
             if let pos = tv.position(from: tv.selectedTextRange?.start ?? tv.endOfDocument, offset: -1) {
                 tv.selectedTextRange = tv.textRange(from: pos, to: pos)

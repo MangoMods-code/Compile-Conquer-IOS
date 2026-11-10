@@ -18,6 +18,17 @@ final class FarmScene: SKScene {
     private var tileSize: CGFloat = 40
     private var origin = CGPoint.zero
     private var builtSize = CGSize.zero
+    private var trail: [SKNode] = []
+    private var highlightNode: SKNode?
+
+    /// Called with the tile the player tapped.
+    var onTapTile: ((Pos) -> Void)?
+    /// Used as a backdrop (title screen): no coordinates, tags or trail.
+    var decorative = false
+    /// Space at the top covered by the HUD; the field is centered below it.
+    var topInset: CGFloat = 0 {
+        didSet { if oldValue != topInset, let w = world { rebuild(w) } }
+    }
 
     override init(size: CGSize) {
         super.init(size: size)
@@ -56,8 +67,11 @@ final class FarmScene: SKScene {
         let target = center(of: w.drone)
         let groundPoint = center(of: old.drone)
 
+        if old.drone != w.drone { addTrail(at: groundPoint) }
+
         switch outcome {
         case .bumped:
+            shake()
             if case .move(let d) = command {
                 let dx = CGFloat(d.delta.dx) * tileSize * 0.22
                 let dy = CGFloat(d.delta.dy) * tileSize * 0.22
@@ -127,12 +141,17 @@ final class FarmScene: SKScene {
         tileKeys = [:]
         overlayKeys = [:]
         ageBadges = [:]
+        trail = []
+        highlightNode = nil
+        board.removeAllActions()
+        board.position = .zero
 
-        let margin = max(24, min(size.width, size.height) * 0.09)
-        tileSize = floor(min((size.width - margin * 2) / CGFloat(w.width), (size.height - margin * 2) / CGFloat(w.height)))
+        let margin = max(26, min(size.width, size.height) * 0.1)
+        let usableHeight = size.height - topInset
+        tileSize = floor(min((size.width - margin * 2) / CGFloat(w.width), (usableHeight - margin * 2) / CGFloat(w.height)))
         tileSize = max(12, tileSize)
         origin = CGPoint(x: ((size.width - tileSize * CGFloat(w.width)) / 2).rounded(),
-                         y: ((size.height - tileSize * CGFloat(w.height)) / 2).rounded())
+                         y: ((usableHeight - tileSize * CGFloat(w.height)) / 2).rounded())
         if builtSize != size { FarmArt.clearCache(); builtSize = size }
 
         // Surroundings (UIKit coordinates for the texture: y grows downward).
@@ -154,6 +173,7 @@ final class FarmScene: SKScene {
         refreshTiles(w, animated: false)
         buildFence(w)
         addClouds()
+        if !decorative && AppSettings.shared.showCoords { addCoordinates(w) }
 
         droneRoot = makeDrone()
         droneRoot.position = center(of: w.drone)
@@ -268,9 +288,8 @@ final class FarmScene: SKScene {
                     overlayKey = "rock"
                     overlayTex = FarmArt.rock(variant(x, y, 3), tileSize)
                 } else if let crop = t.crop {
-                    let stage = crop.ripe ? 3 : min(2, Int(crop.progress * 3))
-                    overlayKey = "wheat\(stage)"
-                    overlayTex = FarmArt.wheat(stage: stage, tileSize)
+                    overlayKey = "\(crop.kind.rawValue)\(crop.stage)"
+                    overlayTex = FarmArt.crop(crop.kind, stage: crop.stage, tileSize)
                 }
                 updateAgeBadge(i, crop: t.crop, at: node.position)
 
@@ -284,7 +303,7 @@ final class FarmScene: SKScene {
                         o.zPosition = 3
                         board.addChild(o)
                         overlayNodes[i] = o
-                        if overlayKey == "wheat3" {
+                        if overlayKey.hasSuffix("3") {
                             o.run(.repeatForever(.sequence([
                                 .scaleX(to: 1.03, y: 0.97, duration: 0.9),
                                 .scaleX(to: 0.98, y: 1.02, duration: 0.9),
@@ -302,7 +321,7 @@ final class FarmScene: SKScene {
 
     /// A small "age/GROW_TIME" tag on each crop so you can see when it will be ripe.
     private func updateAgeBadge(_ i: Int, crop: Crop?, at p: CGPoint) {
-        guard let crop, AppSettings.shared.showCropAges else {
+        guard let crop, !decorative, AppSettings.shared.showCropAges else {
             ageBadges[i]?.removeFromParent()
             ageBadges[i] = nil
             return
@@ -338,6 +357,73 @@ final class FarmScene: SKScene {
             bg.fillColor = ripe ? UIColor(red: 0.98, green: 0.8, blue: 0.3, alpha: 0.95) : UIColor(white: 0, alpha: 0.6)
             bg.strokeColor = ripe ? UIColor(red: 1, green: 0.95, blue: 0.7, alpha: 1) : UIColor(white: 1, alpha: 0.25)
         }
+    }
+
+    // MARK: Coordinates, trail, taps
+
+    /// x along the bottom and y up the left side, matching drone.x / drone.y in code.
+    private func addCoordinates(_ w: FarmWorld) {
+        let font = max(8, min(12, tileSize * 0.17))
+        func label(_ text: String, at p: CGPoint) {
+            let l = SKLabelNode(fontNamed: "Menlo-Bold")
+            l.text = text
+            l.fontSize = font
+            l.fontColor = UIColor(white: 1, alpha: 0.62)
+            l.verticalAlignmentMode = .center
+            l.horizontalAlignmentMode = .center
+            l.position = p
+            l.zPosition = 6
+            board.addChild(l)
+        }
+        let gap = tileSize * 0.16 + font * 0.9
+        for x in 0..<w.width { label("\(x)", at: CGPoint(x: origin.x + (CGFloat(x) + 0.5) * tileSize, y: origin.y - gap)) }
+        for y in 0..<w.height { label("\(y)", at: CGPoint(x: origin.x - gap, y: origin.y + (CGFloat(y) + 0.5) * tileSize)) }
+        label("x", at: CGPoint(x: origin.x + CGFloat(w.width) * tileSize + gap * 0.9, y: origin.y - gap))
+        label("y", at: CGPoint(x: origin.x - gap, y: origin.y + CGFloat(w.height) * tileSize + gap * 0.9))
+    }
+
+    /// A faint dot where the drone has been, so the route of a run stays visible.
+    private func addTrail(at point: CGPoint) {
+        guard !decorative else { return }
+        let dot = SKShapeNode(circleOfRadius: max(1.5, tileSize * 0.05))
+        dot.fillColor = UIColor(white: 1, alpha: 0.55)
+        dot.strokeColor = .clear
+        dot.position = point
+        dot.zPosition = 2.6
+        board.addChild(dot)
+        dot.run(.fadeAlpha(to: 0.28, duration: 1.2))
+        trail.append(dot)
+        if trail.count > 160 { trail.removeFirst().removeFromParent() }
+    }
+
+    private func shake() {
+        let d = tileSize * 0.06
+        board.run(.sequence([.moveBy(x: d, y: 0, duration: 0.03), .moveBy(x: -2 * d, y: 0, duration: 0.05), .moveBy(x: d, y: 0, duration: 0.03)]))
+    }
+
+    /// Outlines one tile (the one being inspected), or clears the outline with nil.
+    func highlight(_ p: Pos?) {
+        highlightNode?.removeFromParent()
+        highlightNode = nil
+        guard let p, let w = world, w.inBounds(p) else { return }
+        let ring = SKShapeNode(rectOf: CGSize(width: tileSize - 3, height: tileSize - 3), cornerRadius: tileSize * 0.08)
+        ring.strokeColor = UIColor(red: 0.38, green: 0.68, blue: 1, alpha: 1)
+        ring.lineWidth = 2.5
+        ring.fillColor = UIColor(red: 0.38, green: 0.68, blue: 1, alpha: 0.12)
+        ring.position = center(of: p)
+        ring.zPosition = 9
+        board.addChild(ring)
+        ring.run(.repeatForever(.sequence([.fadeAlpha(to: 0.55, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
+        highlightNode = ring
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first, let w = world, !decorative else { return }
+        let pt = touch.location(in: board)
+        let x = Int(floor((pt.x - origin.x) / tileSize))
+        let y = Int(floor((pt.y - origin.y) / tileSize))
+        let p = Pos(x: x, y: y)
+        if w.inBounds(p) { onTapTile?(p) }
     }
 
     // MARK: Drone

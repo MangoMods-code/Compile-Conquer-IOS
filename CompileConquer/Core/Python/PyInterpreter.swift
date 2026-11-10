@@ -16,9 +16,50 @@ final class PyInterpreter {
     private let maxBudget: Int
     private var depth = 0
 
+    /// Names that exist in the game but not on this level, with the message to show instead of a NameError.
+    var lockedNames: [String: String] = [:]
+    /// Order in which the player's global variables were first assigned (for the Variables panel).
+    private var globalOrder: [String] = []
+    private var frameStack: [Frame] = []
+
     private final class Frame {
+        let name: String
         var locals: [String: Value] = [:]
+        var order: [String] = []
         var globalNames: Set<String> = []
+        init(name: String) { self.name = name }
+    }
+
+    /// One row of the Variables panel.
+    struct WatchVar: Equatable {
+        let name: String
+        let value: String
+        /// nil for globals, otherwise the function the variable lives in.
+        let scope: String?
+    }
+
+    /// The player's variables right now: globals first, then the locals of the function being run.
+    func watch(limit: Int = 18) -> [WatchVar] {
+        func short(_ v: Value) -> String {
+            let r = v.repr
+            return r.count > 46 ? String(r.prefix(45)) + "…" : r
+        }
+        var out: [WatchVar] = []
+        for n in globalOrder {
+            guard let v = globals[n] else { continue }
+            if case .function = v { continue }
+            out.append(WatchVar(name: n, value: short(v), scope: nil))
+            if out.count >= limit { return out }
+        }
+        if let f = frameStack.last {
+            for n in f.order {
+                guard let v = f.locals[n] else { continue }
+                if case .function = v { continue }
+                out.append(WatchVar(name: n, value: short(v), scope: f.name))
+                if out.count >= limit { break }
+            }
+        }
+        return out
     }
 
     private enum Flow {
@@ -142,7 +183,13 @@ final class PyInterpreter {
     private func assign(_ target: Expr, _ value: Value, _ frame: Frame?) throws {
         switch target {
         case .name(let n):
-            if let frame, !frame.globalNames.contains(n) { frame.locals[n] = value } else { globals[n] = value }
+            if let frame, !frame.globalNames.contains(n) {
+                if frame.locals[n] == nil { frame.order.append(n) }
+                frame.locals[n] = value
+            } else {
+                if globals[n] == nil { globalOrder.append(n) }
+                globals[n] = value
+            }
         case .attr(let objExpr, let name):
             let obj = try eval(objExpr, frame)
             if case .object(let o) = obj {
@@ -177,7 +224,40 @@ final class PyInterpreter {
         if let frame, let v = frame.locals[n] { return v }
         if let v = globals[n] { return v }
         if let v = builtins[n] { return v }
+        if let msg = lockedNames[n] { throw err(msg) }
+        if let close = suggestion(for: n, frame) {
+            throw err("NameError: `\(n)` isn't defined. Did you mean `\(close)`?")
+        }
         throw err("NameError: `\(n)` isn't defined. Check the spelling, or give it a value before using it.")
+    }
+
+    /// The closest known name to a misspelled one (wrong capitals, or one or two letters off).
+    private func suggestion(for n: String, _ frame: Frame?) -> String? {
+        var names = Array(globals.keys) + Array(builtins.keys)
+        if let frame { names += Array(frame.locals.keys) }
+        if let exact = names.first(where: { $0.lowercased() == n.lowercased() }) { return exact }
+        guard n.count >= 3 else { return nil }
+        var best: (String, Int)?
+        for c in names where abs(c.count - n.count) <= 2 {
+            let d = PyInterpreter.editDistance(c.lowercased(), n.lowercased())
+            if d <= (n.count >= 4 ? 2 : 1), d < (best?.1 ?? 99) { best = (c, d) }
+        }
+        return best?.0
+    }
+
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var prev = Array(0...b.count)
+        for i in 1...a.count {
+            var cur = [i] + Array(repeating: 0, count: b.count)
+            for j in 1...b.count {
+                cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+            prev = cur
+        }
+        return prev[b.count]
     }
 
     private func eval(_ e: Expr, _ frame: Frame?) throws -> Value {
@@ -223,6 +303,60 @@ final class PyInterpreter {
             return l.truthy ? l : try eval(b, frame)
         case .ifExp(let cond, let a, let b):
             return try eval(cond, frame).truthy ? try eval(a, frame) : try eval(b, frame)
+        case .fstring(let parts):
+            var out = ""
+            for part in parts {
+                switch part {
+                case .text(let t): out += t
+                case .expr(let e, let decimals):
+                    let v = try eval(e, frame)
+                    if let decimals, let n = v.number { out += String(format: "%.\(decimals)f", n) } else { out += v.text }
+                }
+            }
+            return .str(out)
+        case .listComp(let element, let target, let iterExpr, let cond):
+            var out: [Value] = []
+            for item in try iterate(try eval(iterExpr, frame)) {
+                try spend()
+                try assign(target, item, frame)
+                if let cond, !(try eval(cond, frame).truthy) { continue }
+                out.append(try eval(element, frame))
+            }
+            return .list(PyList(out))
+        case .slice(let valueExpr, let startExpr, let stopExpr, let stepExpr):
+            let v = try eval(valueExpr, frame)
+            func bound(_ e: Expr?) throws -> Int? {
+                guard let e else { return nil }
+                let b = try eval(e, frame)
+                if case .none = b { return nil }
+                guard let i = intValue(b) else { throw err("TypeError: slice positions must be whole numbers.") }
+                return i
+            }
+            let step = try bound(stepExpr) ?? 1
+            guard step != 0 else { throw err("ValueError: slice step can't be 0.") }
+            func pick<T>(_ items: [T]) throws -> [T] {
+                let n = items.count
+                func clamp(_ i: Int, _ lo: Int, _ hi: Int) -> Int { min(max(i < 0 ? i + n : i, lo), hi) }
+                var out: [T] = []
+                if step > 0 {
+                    let a = try bound(startExpr).map { clamp($0, 0, n) } ?? 0
+                    let b = try bound(stopExpr).map { clamp($0, 0, n) } ?? n
+                    var i = a
+                    while i < b { out.append(items[i]); i += step }
+                } else {
+                    let a = try bound(startExpr).map { clamp($0, -1, n - 1) } ?? n - 1
+                    let b = try bound(stopExpr).map { clamp($0, -1, n - 1) } ?? -1
+                    var i = a
+                    while i > b { out.append(items[i]); i += step }
+                }
+                return out
+            }
+            switch v {
+            case .list(let l): return .list(PyList(try pick(l.items)))
+            case .tuple(let t): return .tuple(try pick(t))
+            case .str(let str): return .str(String(try pick(Array(str))))
+            default: throw err("TypeError: a \(v.typeName) can't be sliced.")
+            }
         case .call(let fnExpr, let argExprs, let kwExprs):
             let fn = try eval(fnExpr, frame)
             let args = try argExprs.map { try eval($0, frame) }
@@ -274,11 +408,14 @@ final class PyInterpreter {
             depth += 1
             defer { depth -= 1 }
             guard depth < 150 else { throw err("RecursionError: too many functions calling each other.") }
-            let frame = Frame()
+            let frame = Frame(name: f.name)
+            frameStack.append(frame)
+            defer { frameStack.removeLast() }
             guard args.count <= f.params.count else {
                 throw err("TypeError: \(f.name)() takes \(f.params.count) argument\(f.params.count == 1 ? "" : "s") but got \(args.count).")
             }
             for (i, p) in f.params.enumerated() {
+                frame.order.append(p.name)
                 if i < args.count { frame.locals[p.name] = args[i] }
                 else if let v = kwargs[p.name] { frame.locals[p.name] = v }
                 else if i < f.defaults.count, let d = f.defaults[i] { frame.locals[p.name] = d }
@@ -299,7 +436,7 @@ final class PyInterpreter {
 
     // MARK: Operators
 
-    private func intValue(_ v: Value) -> Int? {
+    func intValue(_ v: Value) -> Int? {
         switch v {
         case .int(let i): return i
         case .bool(let b): return b ? 1 : 0
@@ -454,6 +591,11 @@ final class PyInterpreter {
                 return .int(i)
             }
             case "count": return method(name) { args in try self.need(args, 1, "count"); return .int(l.items.filter { $0.equals(args[0]) }.count) }
+            case "extend": return method(name) { args in
+                try self.need(args, 1, "extend")
+                l.items += try self.iterate(args[0]); return .none
+            }
+            case "copy": return method(name) { _ in .list(PyList(l.items)) }
             case "reverse": return method(name) { _ in l.items.reverse(); return .none }
             case "clear": return method(name) { _ in l.items.removeAll(); return .none }
             case "sort": return method(name) { _ in l.items = try self.sorted(l.items); return .none }
@@ -472,6 +614,10 @@ final class PyInterpreter {
             }
         case .str(let s):
             switch name {
+            case "join": return method(name) { args in
+                try self.need(args, 1, "join")
+                return .str(try self.iterate(args[0]).map(\.text).joined(separator: s))
+            }
             case "upper": return method(name) { _ in .str(s.uppercased()) }
             case "lower": return method(name) { _ in .str(s.lowercased()) }
             case "strip": return method(name) { _ in .str(s.trimmingCharacters(in: .whitespaces)) }
@@ -592,6 +738,29 @@ final class PyInterpreter {
         add("sorted") { [unowned self] args, _ in
             try self.need(args, 1, "sorted")
             return .list(PyList(try self.sorted(try self.iterate(args[0]))))
+        }
+        add("enumerate") { [unowned self] args, _ in
+            guard let first = args.first else { throw self.err("TypeError: enumerate() needs a list.") }
+            var start = 0
+            if args.count > 1, let s = self.intValue(args[1]) { start = s }
+            return .list(PyList(try self.iterate(first).enumerated().map { .tuple([.int($0.offset + start), $0.element]) }))
+        }
+        add("zip") { [unowned self] args, _ in
+            let lists = try args.map { try self.iterate($0) }
+            let n = lists.map(\.count).min() ?? 0
+            return .list(PyList((0..<n).map { i in .tuple(lists.map { $0[i] }) }))
+        }
+        add("reversed") { [unowned self] args, _ in
+            try self.need(args, 1, "reversed")
+            return .list(PyList(try self.iterate(args[0]).reversed()))
+        }
+        add("any") { [unowned self] args, _ in
+            try self.need(args, 1, "any")
+            return .bool(try self.iterate(args[0]).contains { $0.truthy })
+        }
+        add("all") { [unowned self] args, _ in
+            try self.need(args, 1, "all")
+            return .bool(try self.iterate(args[0]).allSatisfy { $0.truthy })
         }
         add("round") { [unowned self] args, _ in
             guard let n = args.first?.number else { throw self.err("TypeError: round() needs a number.") }

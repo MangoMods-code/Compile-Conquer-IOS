@@ -1,273 +1,306 @@
 import SwiftUI
 
-// MARK: - Title
-
-struct TitleView: View {
-    let onPlay: () -> Void
-    @State private var bob = false
-    @State private var showSettings = false
-
-    var body: some View {
-        ZStack {
-            GridBackground()
-            VStack(spacing: 14) {
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right.square.fill")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(Theme.accent)
-                    .offset(y: bob ? -6 : 6)
-                    .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: bob)
-                VStack(spacing: 4) {
-                    Text("COMPILE")
-                        .font(Theme.mono(40, .heavy))
-                    Text("& CONQUER")
-                        .font(Theme.mono(40, .heavy))
-                        .foregroundStyle(Theme.accent)
-                }
-                .foregroundStyle(Theme.text)
-                Text("Write code. Command machines. Conquer the map.")
-                    .font(Theme.mono(13))
-                    .foregroundStyle(Theme.dim)
-                Button(action: onPlay) {
-                    Label("PLAY", systemImage: "play.fill").frame(minWidth: 160)
-                }
-                .buttonStyle(PillButtonStyle())
-                .accessibilityIdentifier("play")
-                .padding(.top, 6)
-                Spacer(minLength: 0)
-                Text(AppInfo.versionLabel)
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.dim.opacity(0.7))
-                    .padding(.bottom, 8)
-            }
-            .padding()
-        }
-        .overlay(alignment: .topTrailing) {
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 42, height: 42)
-                    .background(Circle().fill(Theme.panelHi))
-            }
-            .padding(16)
-        }
-        .sheet(isPresented: $showSettings) { SettingsView() }
-        .toolbar(.hidden, for: .navigationBar)
-        .onAppear { bob = true }
-    }
-}
-
 // MARK: - Shared header
 
-struct MenuHeader: View {
+struct MenuHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
+    @ViewBuilder var trailing: () -> Trailing
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Theme.panelHi))
-            }
-            VStack(alignment: .leading, spacing: 2) {
+            IconButton(symbol: "chevron.left", size: 38) { dismiss() }
+                .accessibilityIdentifier("back")
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(Theme.mono(20, .heavy)).foregroundStyle(Theme.text)
-                Text(subtitle).font(Theme.mono(11)).foregroundStyle(Theme.dim)
+                Text(subtitle).font(Theme.mono(11)).foregroundStyle(Theme.dim).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+    }
+}
+
+struct StarCount: View {
+    let have: Int
+    let of: Int
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "star.fill").font(.system(size: 11, weight: .bold))
+            Text("\(have)/\(of)").font(Theme.mono(13, .bold)).monospacedDigit()
+        }
+        .foregroundStyle(Theme.gold)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(Theme.gold.opacity(0.12)))
+    }
+}
+
+// MARK: - Worlds (with the language campaigns across the top)
+
+struct WorldSelectView: View {
+    let onPick: (WorldInfo) -> Void
+    @ObservedObject private var progress = GameProgress.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var campaign = Campaign.all[0]
+
+    var body: some View {
+        ZStack {
+            GridBackground()
+            VStack(alignment: .leading, spacing: 12) {
+                MenuHeader(title: "\(campaign.name) campaign", subtitle: "Every world is a new place with a new machine to program.") {
+                    StarCount(have: progress.allStars, of: WorldInfo.all.reduce(0) { $0 + $1.levels.count * 3 })
+                }
+                campaignTabs
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(Array(WorldInfo.all.enumerated()), id: \.element.id) { i, w in
+                            Button {
+                                SoundFX.shared.play(.tap)
+                                onPick(w)
+                            } label: { card(w, index: i) }
+                                .buttonStyle(PressStyle())
+                                .disabled(!progress.isUnlocked(w))
+                                .accessibilityIdentifier("world.\(w.id)")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear { SoundFX.shared.setTrack(.farm) }
+    }
+
+    /// One tab per language. Only Python is playable for now.
+    private var campaignTabs: some View {
+        HStack(spacing: 8) {
+            ForEach(Campaign.all) { c in
+                HStack(spacing: 5) {
+                    Image(systemName: c.available ? c.symbol : "lock.fill").font(.system(size: 10, weight: .bold))
+                    Text(c.name).font(Theme.mono(12, .bold))
+                    if !c.available { Text("SOON").font(Theme.mono(8, .bold)).foregroundStyle(Theme.dim.opacity(0.7)) }
+                }
+                .foregroundStyle(c == campaign ? Color.black : (c.available ? Theme.text : Theme.dim.opacity(0.7)))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(Capsule().fill(c == campaign ? Theme.accent : Theme.panelHi.opacity(c.available ? 1 : 0.5)))
+                .accessibilityIdentifier("campaign.\(c.id)")
             }
             Spacer()
         }
     }
-}
 
-struct LockedBadge: View {
-    var body: some View {
-        Label("SOON", systemImage: "lock.fill")
-            .font(Theme.mono(10, .bold))
-            .foregroundStyle(Theme.dim)
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Capsule().fill(Theme.panelHi))
-    }
-}
-
-// MARK: - Campaigns
-
-struct CampaignSelectView: View {
-    let onPick: (Campaign) -> Void
-
-    var body: some View {
-        ZStack {
-            GridBackground()
-            VStack(alignment: .leading, spacing: 14) {
-                MenuHeader(title: "Choose a language", subtitle: "Each language is its own campaign.")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(Campaign.all) { c in
-                            Button { onPick(c) } label: { card(c) }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("campaign.\(c.id)")
-                                .disabled(!c.available)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(20)
-        }
-        .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private func card(_ c: Campaign) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: c.symbol)
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(c.available ? Theme.accent : Theme.dim)
-                Spacer()
-                if !c.available { LockedBadge() }
-            }
-            Spacer(minLength: 0)
-            Text(c.name).font(Theme.mono(22, .heavy)).foregroundStyle(c.available ? Theme.text : Theme.dim)
-            Text(c.tagline).font(Theme.mono(11)).foregroundStyle(Theme.dim).lineLimit(2)
-        }
-        .padding(16)
-        .frame(width: 210, height: 190)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Theme.panel))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.available ? Theme.accent.opacity(0.5) : Theme.line, lineWidth: 1))
-        .opacity(c.available ? 1 : 0.65)
-    }
-}
-
-// MARK: - Worlds
-
-struct WorldSelectView: View {
-    let campaign: Campaign
-    let onPick: (WorldInfo) -> Void
-    @ObservedObject private var progress = GameProgress.shared
-    @ObservedObject private var settings = AppSettings.shared
-
-    var body: some View {
-        ZStack {
-            GridBackground()
-            VStack(alignment: .leading, spacing: 14) {
-                MenuHeader(title: "\(campaign.name) campaign", subtitle: "Pick a world. Every world gives you a different machine.")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(WorldInfo.all) { w in
-                            Button { onPick(w) } label: { card(w) }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("world.\(w.id)")
-                                .disabled(!progress.isUnlocked(w))
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(20)
-        }
-        .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private func card(_ w: WorldInfo) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: w.symbol)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(w.available ? Theme.gold : Theme.dim)
-                Spacer()
-                if progress.isUnlocked(w) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill").font(.system(size: 10))
-                        Text("\(progress.totalStars(w.levels))/\(w.levels.count * 3)").font(Theme.mono(11, .bold))
-                    }
-                    .foregroundStyle(Theme.gold)
-                } else if w.available {
-                    Label("FINISH PREVIOUS", systemImage: "lock.fill")
-                        .font(Theme.mono(9, .bold))
-                        .foregroundStyle(Theme.dim)
+    private func card(_ w: WorldInfo, index: Int) -> some View {
+        let unlocked = progress.isUnlocked(w)
+        let total = w.levels.count * 3
+        let have = progress.totalStars(w.levels)
+        let tint = Theme.tint(w.kind)
+        return VStack(alignment: .leading, spacing: 0) {
+            WorldThumbnail(world: w, height: 96)
+                .overlay(LinearGradient(colors: [.clear, Theme.panel.opacity(0.9)], startPoint: .center, endPoint: .bottom))
+                .overlay(alignment: .topLeading) {
+                    Text("WORLD \(index + 1)")
+                        .font(Theme.mono(9, .heavy))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 7).padding(.vertical, 4)
-                        .background(Capsule().fill(Theme.panelHi))
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                        .padding(8)
+                }
+                .overlay {
+                    if !unlocked {
+                        ZStack {
+                            Color.black.opacity(0.55)
+                            Image(systemName: "lock.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                        }
+                    }
+                }
+                .saturation(unlocked ? 1 : 0.3)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(w.name).font(Theme.mono(17, .heavy)).foregroundStyle(unlocked ? Theme.text : Theme.dim)
+                Text(w.machine.uppercased()).font(Theme.mono(9, .bold)).foregroundStyle(tint.opacity(unlocked ? 1 : 0.5))
+                Text(w.blurb)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 2)
+                if unlocked {
+                    HStack(spacing: 8) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.08))
+                                Capsule().fill(tint).frame(width: geo.size.width * CGFloat(have) / CGFloat(max(1, total)))
+                            }
+                        }
+                        .frame(height: 5)
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill").font(.system(size: 8))
+                            Text("\(have)/\(total)").font(Theme.mono(10, .bold)).monospacedDigit()
+                        }
+                        .foregroundStyle(Theme.gold)
+                    }
                 } else {
-                    LockedBadge()
+                    Text(w.available ? "Finish the world before it to unlock" : "Coming soon")
+                        .font(Theme.mono(9, .bold))
+                        .foregroundStyle(Theme.dim.opacity(0.8))
                 }
             }
-            Spacer(minLength: 0)
-            Text(w.name).font(Theme.mono(19, .heavy)).foregroundStyle(w.available ? Theme.text : Theme.dim)
-            Text(w.machine.uppercased()).font(Theme.mono(10, .bold)).foregroundStyle(Theme.accent.opacity(w.available ? 1 : 0.5))
-            Text(w.blurb).font(Theme.mono(11)).foregroundStyle(Theme.dim).lineLimit(2)
+            .padding(12)
         }
-        .padding(14)
-        .frame(width: 190, height: 180)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Theme.panel))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(w.available ? Theme.gold.opacity(0.45) : Theme.line, lineWidth: 1))
-        .opacity(w.available ? 1 : 0.65)
+        .frame(width: 214, height: 236)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(unlocked ? tint.opacity(0.5) : Theme.line, lineWidth: 1))
+        .opacity(unlocked ? 1 : 0.75)
     }
 }
 
-// MARK: - Levels
+// MARK: - Levels (a path through the world)
 
 struct LevelSelectView: View {
     let world: WorldInfo
     let onPick: (LevelSpec) -> Void
     @ObservedObject private var progress = GameProgress.shared
+    @State private var pulse = false
+
+    private let spacing: CGFloat = 148
+    private let pathHeight: CGFloat = 236
+    private var tint: Color { Theme.tint(world.kind) }
+
+    /// The level to play next: the first open one without a star.
+    private var current: LevelSpec? {
+        world.levels.first { progress.isUnlocked($0, in: world.levels) && progress.stars(for: $0.id) == 0 }
+    }
+
+    private func center(_ i: Int) -> CGPoint {
+        CGPoint(x: 80 + CGFloat(i) * spacing, y: 72 + (i % 2 == 0 ? 0 : 34))
+    }
 
     var body: some View {
         ZStack {
-            GridBackground()
-            VStack(alignment: .leading, spacing: 14) {
-                MenuHeader(title: world.name, subtitle: "Maps are generated fresh each time you play.")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(world.levels) { level in
-                            let unlocked = progress.isUnlocked(level, in: world.levels)
-                            Button { onPick(level) } label: { tile(level, unlocked: unlocked) }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("level.\(level.id)")
-                                .disabled(!unlocked)
+            GridBackground(glow: tint)
+            VStack(alignment: .leading, spacing: 8) {
+                MenuHeader(title: world.name, subtitle: "\(world.machine) · maps are generated, so no two plays are the same") {
+                    let tidyTotal = world.levels.filter { $0.tidyLines != nil }.count
+                    if tidyTotal > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "scissors").font(.system(size: 10, weight: .bold))
+                            Text("\(world.levels.filter { progress.isTidy($0.id) }.count)/\(tidyTotal)").font(Theme.mono(13, .bold))
                         }
-                        comingSoon
+                        .foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Capsule().fill(Theme.blue.opacity(0.12)))
                     }
-                    .padding(.vertical, 4)
+                    StarCount(have: progress.totalStars(world.levels), of: world.levels.count * 3)
+                }
+                .padding(.horizontal, 20)
+
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        ZStack(alignment: .topLeading) {
+                            trail
+                            ForEach(Array(world.levels.enumerated()), id: \.element.id) { i, level in
+                                node(level, index: i)
+                                    .position(x: center(i).x, y: center(i).y + 62)
+                                    .id(level.id)
+                            }
+                        }
+                        .frame(width: 160 + CGFloat(max(0, world.levels.count - 1)) * spacing, height: pathHeight)
+                        .padding(.horizontal, 12)
+                    }
+                    .onAppear {
+                        if let c = current { proxy.scrollTo(c.id, anchor: .center) }
+                    }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .padding(.top, 14)
         }
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            SoundFX.shared.setTrack(world.kind == .warehouse ? .warehouse : .farm)
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 
-    private func tile(_ level: LevelSpec, unlocked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(String(format: "%02d", level.number))
-                    .font(Theme.mono(28, .heavy))
-                    .foregroundStyle(unlocked ? Theme.accent : Theme.dim)
-                Spacer()
-                if !unlocked { Image(systemName: "lock.fill").foregroundStyle(Theme.dim) }
+    /// The dotted path joining the level nodes; the part already cleared is solid.
+    private var trail: some View {
+        Canvas { ctx, _ in
+            for i in 0..<max(0, world.levels.count - 1) {
+                let a = center(i), b = center(i + 1)
+                var p = Path()
+                p.move(to: a)
+                p.addCurve(to: b, control1: CGPoint(x: a.x + spacing * 0.5, y: a.y), control2: CGPoint(x: b.x - spacing * 0.5, y: b.y))
+                let cleared = progress.stars(for: world.levels[i].id) > 0
+                ctx.stroke(p, with: .color(cleared ? tint.opacity(0.8) : Color.white.opacity(0.16)),
+                           style: StrokeStyle(lineWidth: cleared ? 4 : 3, lineCap: .round, dash: cleared ? [] : [2, 9]))
             }
-            Text(level.title).font(Theme.mono(14, .bold)).foregroundStyle(unlocked ? Theme.text : Theme.dim).lineLimit(1)
-            Spacer(minLength: 0)
-            StarsView(count: progress.stars(for: level.id), size: 14)
         }
-        .padding(14)
-        .frame(width: 150, height: 150)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Theme.panel))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(unlocked ? Theme.accent.opacity(0.4) : Theme.line, lineWidth: 1))
-        .opacity(unlocked ? 1 : 0.6)
+        .frame(height: pathHeight)
+        .allowsHitTesting(false)
     }
 
-    private var comingSoon: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 22, weight: .bold))
-            Text("More levels\ncoming soon").font(Theme.mono(11, .bold)).multilineTextAlignment(.center)
+    private func node(_ level: LevelSpec, index: Int) -> some View {
+        let unlocked = progress.isUnlocked(level, in: world.levels)
+        let stars = progress.stars(for: level.id)
+        let isCurrent = current == level
+        return Button {
+            SoundFX.shared.play(.tap)
+            onPick(level)
+        } label: {
+            VStack(spacing: 5) {
+                ZStack {
+                    if isCurrent {
+                        Circle().stroke(tint.opacity(0.5), lineWidth: 3)
+                            .frame(width: 74, height: 74)
+                            .scaleEffect(pulse ? 1.14 : 0.96)
+                            .opacity(pulse ? 0.15 : 0.9)
+                    }
+                    Circle()
+                        .fill(stars > 0 ? tint : (unlocked ? Theme.panelHi : Theme.panel))
+                        .frame(width: 58, height: 58)
+                        .overlay(Circle().stroke(unlocked ? tint : Theme.line, lineWidth: stars > 0 ? 0 : 2))
+                        .shadow(color: (stars > 0 || isCurrent) ? tint.opacity(0.45) : .clear, radius: 10)
+                    if unlocked {
+                        Text("\(level.number)")
+                            .font(Theme.mono(22, .heavy))
+                            .foregroundStyle(stars > 0 ? Color.black : Theme.text)
+                    } else {
+                        Image(systemName: "lock.fill").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.dim.opacity(0.7))
+                    }
+                }
+                .frame(width: 78, height: 78)
+                .overlay(alignment: .topTrailing) {
+                    if progress.isTidy(level.id) {
+                        Image(systemName: "scissors")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.black)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Theme.blue))
+                            .offset(x: -4, y: 4)
+                    }
+                }
+
+                StarsView(count: stars, size: 12)
+                    .opacity(unlocked ? 1 : 0.35)
+                Text(level.title)
+                    .font(Theme.mono(11, .bold))
+                    .foregroundStyle(unlocked ? Theme.text : Theme.dim)
+                    .lineLimit(1)
+                Text(level.concept)
+                    .font(Theme.mono(9))
+                    .foregroundStyle(unlocked ? Theme.purple : Theme.dim.opacity(0.6))
+                    .lineLimit(1)
+            }
+            .frame(width: 140)
         }
-        .foregroundStyle(Theme.dim)
-        .frame(width: 150, height: 150)
-        .background(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        .buttonStyle(PressStyle())
+        .disabled(!unlocked)
+        .accessibilityIdentifier("level.\(level.id)")
     }
 }

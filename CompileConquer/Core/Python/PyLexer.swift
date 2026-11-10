@@ -11,6 +11,7 @@ enum TokKind: Equatable {
     case int(Int)
     case float(Double)
     case string(String)
+    case fstring(String)
     case op(String)
     case newline
     case indent
@@ -28,6 +29,30 @@ enum PyLexer {
     private static let ops3: Set<String> = ["**=", "//="]
     private static let ops2: Set<String> = ["==", "!=", "<=", ">=", "//", "**", "+=", "-=", "*=", "/=", "%=", "->"]
     private static let ops1: Set<Character> = ["+", "-", "*", "/", "%", "<", ">", "=", "(", ")", "[", "]", "{", "}", ",", ":", "."]
+
+    /// Reads a quoted string starting at the opening quote. Returns its text and the index after the closing quote.
+    private static func readString(_ chars: [Character], _ start: Int, _ lineNo: Int) throws -> (String, Int) {
+        let quote = chars[start]
+        var p = start + 1
+        var s = ""
+        while p < chars.count {
+            let ch = chars[p]
+            if ch == "\\", p + 1 < chars.count {
+                let n = chars[p + 1]
+                switch n {
+                case "n": s.append("\n")
+                case "t": s.append("\t")
+                default: s.append(n)
+                }
+                p += 2
+                continue
+            }
+            if ch == quote { return (s, p + 1) }
+            s.append(ch)
+            p += 1
+        }
+        throw ScriptError(line: lineNo, message: "SyntaxError: this string is missing its closing \(quote).")
+    }
 
     static func tokenize(_ source: String, lineOffset: Int) throws -> [Token] {
         var tokens: [Token] = []
@@ -94,33 +119,21 @@ enum PyLexer {
                     while p < chars.count, chars[p].isLetter || chars[p].isNumber || chars[p] == "_" {
                         s.append(chars[p]); p += 1
                     }
+                    // f"..." strings: the text is split into pieces by the parser.
+                    if s == "f" || s == "F", p < chars.count, chars[p] == "\"" || chars[p] == "'" {
+                        let (text, next) = try readString(chars, p, lineNo)
+                        tokens.append(Token(kind: .fstring(text), line: lineNo))
+                        p = next
+                        continue
+                    }
                     tokens.append(Token(kind: .name(s), line: lineNo))
                     continue
                 }
 
                 if c == "\"" || c == "'" {
-                    let quote = c
-                    p += 1
-                    var s = ""
-                    var closed = false
-                    while p < chars.count {
-                        let ch = chars[p]
-                        if ch == "\\", p + 1 < chars.count {
-                            let n = chars[p + 1]
-                            switch n {
-                            case "n": s.append("\n")
-                            case "t": s.append("\t")
-                            default: s.append(n)
-                            }
-                            p += 2
-                            continue
-                        }
-                        if ch == quote { closed = true; p += 1; break }
-                        s.append(ch)
-                        p += 1
-                    }
-                    if !closed { throw ScriptError(line: lineNo, message: "SyntaxError: this string is missing its closing \(quote).") }
-                    tokens.append(Token(kind: .string(s), line: lineNo))
+                    let (text, next) = try readString(chars, p, lineNo)
+                    tokens.append(Token(kind: .string(text), line: lineNo))
+                    p = next
                     continue
                 }
 

@@ -53,6 +53,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+      - path: TestSupport
     dependencies:
       - target: CompileConquer
     settings:
@@ -67,6 +68,7 @@ targets:
     platform: iOS
     sources:
       - path: UITests
+      - path: TestSupport
     dependencies:
       - target: CompileConquer
     settings:

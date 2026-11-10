@@ -15,6 +15,16 @@ final class WarehouseScene: SKScene, WorldRenderer {
     private var tileSize: CGFloat = 40
     private var origin = CGPoint.zero
     private var builtSize = CGSize.zero
+    private var trail: [SKNode] = []
+    private var highlightNode: SKNode?
+
+    /// Called with the tile the player tapped.
+    var onTapTile: ((Pos) -> Void)?
+    var decorative = false
+    /// Space at the top covered by the HUD; the floor is centered below it.
+    var topInset: CGFloat = 0 {
+        didSet { if oldValue != topInset, let w = world { rebuild(w) } }
+    }
 
     override init(size: CGSize) {
         super.init(size: size)
@@ -50,8 +60,11 @@ final class WarehouseScene: SKScene, WorldRenderer {
         let target = center(of: w.loader)
         let here = center(of: old.loader)
 
+        if old.loader != w.loader { addTrail(at: here) }
+
         switch outcome {
         case .bumped:
+            shake()
             if case .move(let d) = command {
                 let dx = CGFloat(d.delta.dx) * tileSize * 0.2
                 let dy = CGFloat(d.delta.dy) * tileSize * 0.2
@@ -101,11 +114,16 @@ final class WarehouseScene: SKScene, WorldRenderer {
         tileNodes = []
         crateNodes = [:]
         crateKeys = [:]
+        trail = []
+        highlightNode = nil
+        board.removeAllActions()
+        board.position = .zero
 
-        let margin = max(26, min(size.width, size.height) * 0.09)
-        tileSize = max(12, floor(min((size.width - margin * 2) / CGFloat(w.width), (size.height - margin * 2) / CGFloat(w.height))))
+        let margin = max(28, min(size.width, size.height) * 0.11)
+        let usableHeight = size.height - topInset
+        tileSize = max(12, floor(min((size.width - margin * 2) / CGFloat(w.width), (usableHeight - margin * 2) / CGFloat(w.height))))
         origin = CGPoint(x: ((size.width - tileSize * CGFloat(w.width)) / 2).rounded(),
-                         y: ((size.height - tileSize * CGFloat(w.height)) / 2).rounded())
+                         y: ((usableHeight - tileSize * CGFloat(w.height)) / 2).rounded())
         if builtSize != size { WarehouseArt.clearCache(); builtSize = size }
 
         let fieldUIKit = CGRect(x: origin.x, y: size.height - origin.y - tileSize * CGFloat(w.height),
@@ -125,18 +143,23 @@ final class WarehouseScene: SKScene, WorldRenderer {
             }
         }
 
-        // Ceiling lights: soft pools that flicker now and then.
-        for k in 0..<max(2, w.width / 3) {
-            let light = SKSpriteNode(texture: WarehouseArt.glow(UIColor(red: 1, green: 0.97, blue: 0.85, alpha: 0.22), key: "light", tileSize * 3))
+        // Ceiling lights: warm pools on the floor that flicker now and then.
+        let lights = max(2, (w.width + 1) / 3)
+        for k in 0..<lights {
+            let d = tileSize * 3.4
+            let light = SKSpriteNode(texture: WarehouseArt.glow(UIColor(red: 1, green: 0.93, blue: 0.75, alpha: 0.13), key: "light", d),
+                                     size: CGSize(width: d, height: d))
             light.blendMode = .add
-            light.position = CGPoint(x: origin.x + tileSize * (CGFloat(k) * 3 + 1.5), y: origin.y + tileSize * CGFloat(w.height) * 0.6)
+            let fx = (CGFloat(k) + 0.5) / CGFloat(lights)
+            light.position = CGPoint(x: origin.x + tileSize * CGFloat(w.width) * fx, y: origin.y + tileSize * CGFloat(w.height) * 0.5)
             light.zPosition = 6
             board.addChild(light)
             light.run(.repeatForever(.sequence([
-                .wait(forDuration: Double.random(in: 3...7)),
-                .fadeAlpha(to: 0.5, duration: 0.05), .fadeAlpha(to: 1, duration: 0.08),
+                .wait(forDuration: Double.random(in: 4...9)),
+                .fadeAlpha(to: 0.6, duration: 0.05), .fadeAlpha(to: 1, duration: 0.08),
             ])))
         }
+        if !decorative && AppSettings.shared.showCoords { addCoordinates(w) }
 
         refreshCrates(w, animated: false)
 
@@ -188,6 +211,71 @@ final class WarehouseScene: SKScene, WorldRenderer {
                 }
             }
         }
+    }
+
+    // MARK: Coordinates, trail, taps
+
+    /// x along the bottom and y up the left side, matching loader.x / loader.y in code.
+    private func addCoordinates(_ w: WarehouseWorld) {
+        let font = max(8, min(12, tileSize * 0.17))
+        func label(_ text: String, at p: CGPoint) {
+            let l = SKLabelNode(fontNamed: "Menlo-Bold")
+            l.text = text
+            l.fontSize = font
+            l.fontColor = UIColor(white: 1, alpha: 0.6)
+            l.verticalAlignmentMode = .center
+            l.horizontalAlignmentMode = .center
+            l.position = p
+            l.zPosition = 6
+            board.addChild(l)
+        }
+        let gap = max(6, tileSize * 0.22) + font * 0.9
+        for x in 0..<w.width { label("\(x)", at: CGPoint(x: origin.x + (CGFloat(x) + 0.5) * tileSize, y: origin.y - gap)) }
+        for y in 0..<w.height { label("\(y)", at: CGPoint(x: origin.x - gap, y: origin.y + (CGFloat(y) + 0.5) * tileSize)) }
+        label("x", at: CGPoint(x: origin.x + CGFloat(w.width) * tileSize + gap * 0.9, y: origin.y - gap))
+        label("y", at: CGPoint(x: origin.x - gap, y: origin.y + CGFloat(w.height) * tileSize + gap * 0.9))
+    }
+
+    /// A faint tire mark where the loader has been, so the route of a run stays visible.
+    private func addTrail(at point: CGPoint) {
+        guard !decorative else { return }
+        let dot = SKShapeNode(rectOf: CGSize(width: tileSize * 0.16, height: tileSize * 0.16), cornerRadius: tileSize * 0.03)
+        dot.fillColor = UIColor(red: 1, green: 0.85, blue: 0.3, alpha: 0.6)
+        dot.strokeColor = .clear
+        dot.position = point
+        dot.zPosition = 2
+        board.addChild(dot)
+        dot.run(.fadeAlpha(to: 0.3, duration: 1.2))
+        trail.append(dot)
+        if trail.count > 160 { trail.removeFirst().removeFromParent() }
+    }
+
+    private func shake() {
+        let d = tileSize * 0.06
+        board.run(.sequence([.moveBy(x: d, y: 0, duration: 0.03), .moveBy(x: -2 * d, y: 0, duration: 0.05), .moveBy(x: d, y: 0, duration: 0.03)]))
+    }
+
+    /// Outlines one tile (the one being inspected), or clears the outline with nil.
+    func highlight(_ p: Pos?) {
+        highlightNode?.removeFromParent()
+        highlightNode = nil
+        guard let p, let w = world, w.inBounds(p) else { return }
+        let ring = SKShapeNode(rectOf: CGSize(width: tileSize - 3, height: tileSize - 3), cornerRadius: tileSize * 0.08)
+        ring.strokeColor = UIColor(red: 0.38, green: 0.68, blue: 1, alpha: 1)
+        ring.lineWidth = 2.5
+        ring.fillColor = UIColor(red: 0.38, green: 0.68, blue: 1, alpha: 0.12)
+        ring.position = center(of: p)
+        ring.zPosition = 9
+        board.addChild(ring)
+        ring.run(.repeatForever(.sequence([.fadeAlpha(to: 0.55, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
+        highlightNode = ring
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first, let w = world, !decorative else { return }
+        let pt = touch.location(in: board)
+        let p = Pos(x: Int(floor((pt.x - origin.x) / tileSize)), y: Int(floor((pt.y - origin.y) / tileSize)))
+        if w.inBounds(p) { onTapTile?(p) }
     }
 
     // MARK: Loader

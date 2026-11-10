@@ -1,13 +1,18 @@
 import SwiftUI
 import SpriteKit
 
+/// The level screen: the live map on the left, main.py and the run controls on the right.
 struct GameScreen: View {
     @StateObject private var session: GameSession
     let onExit: () -> Void
     let onNext: (() -> Void)?
+
     @State private var showHint = false
     @State private var jump: EditorJump?
     @State private var showSettings = false
+    @State private var showHandbook = false
+    @State private var panelTab = 0
+    @State private var panelExpanded = false
     @ObservedObject private var settings = AppSettings.shared
 
     init(level: LevelSpec, onExit: @escaping () -> Void, onNext: (() -> Void)?) {
@@ -16,178 +21,159 @@ struct GameScreen: View {
         self.onNext = onNext
     }
 
+    private var level: LevelSpec { session.level }
+    private var tint: Color { Theme.tint(level.world) }
+    private var mapColor: Color {
+        level.world == .farm ? Color(red: 0.11, green: 0.23, blue: 0.12) : Color(red: 0.1, green: 0.11, blue: 0.13)
+    }
+
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    topBar
-                    SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
-                        .overlay(alignment: .center) { resultOverlay }
-                        .overlay(alignment: .bottom) { failureBanner }
-                }
-                .frame(width: geo.size.width * 0.5)
-
-                Rectangle().fill(Theme.line).frame(width: 1)
-
-                rightPanel
+                mapSide
+                    .frame(width: geo.size.width * 0.47)
+                Rectangle().fill(Color.black.opacity(0.5)).frame(width: 1)
+                codeSide
             }
         }
-        .background(Theme.bg.ignoresSafeArea())
+        .background(
+            HStack(spacing: 0) {
+                mapColor
+                Theme.panel
+            }
+            .ignoresSafeArea()
+        )
         .ignoresSafeArea(.keyboard)
+        .overlay {
+            if case .won(let info) = session.state {
+                WinOverlay(info: info, level: level, tint: tint,
+                           onReplay: { session.dismissResult() },
+                           onReview: { session.seek(session.totalTicks) },
+                           onNext: onNext, onExit: onExit)
+                    .transition(.opacity)
+            }
+        }
+        .overlay {
+            if session.showIntro {
+                IntroCard(level: level, par: session.threeStarTicks, tint: tint) {
+                    withAnimation(.easeOut(duration: 0.2)) { session.dismissIntro() }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: session.state)
         .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden()
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showHandbook) { HandbookView(level: level) }
+        .onAppear {
+            session.setTopInset(48)
+            SoundFX.shared.setTrack(level.world == .farm ? .farm : .warehouse)
+            // First visit: start at the top so the setup gets read. After that, open at your code.
+            let firstVisit = !GameProgress.shared.hasSavedCode(for: level)
+            jump = EditorJump(line: firstVisit ? 1 : session.firstCodeLine)
+        }
+        .onDisappear { session.stop() }
     }
 
     // MARK: Map side
 
-    private var topBar: some View {
-        HStack(spacing: 10) {
-            Button(action: onExit) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Theme.panelHi))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(session.level.worldLabel) \(session.level.number)")
-                    .font(Theme.mono(10, .bold)).foregroundStyle(Theme.accent)
-                Text(session.level.title)
-                    .font(Theme.mono(14, .bold)).foregroundStyle(Theme.text).lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            stat(icon: session.level.goalIcon, text: "\(session.goalCount)/\(session.level.goal)", color: Theme.gold)
-            stat(icon: "clock", text: "\(session.world.ticks)/\(session.threeStarTicks)", color: session.world.ticks > session.threeStarTicks ? Theme.danger : Theme.text)
-            Menu {
-                Button { session.newMap() } label: { Label("New map", systemImage: "dice") }
-                    .disabled(session.state.isActive)
-                Text("Seed \(session.seedText)")
-            } label: {
-                Image(systemName: "dice.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Theme.panelHi))
+    private var mapSide: some View {
+        ZStack(alignment: .top) {
+            SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
+            LevelHUD(session: session, tint: tint, onExit: onExit)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if let info = session.inspected {
+                TileInspector(info: info) { session.clearInspection() }
+                    .padding(8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-    }
-
-    private func stat(icon: String, text: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
-            Text(text).font(Theme.mono(13, .bold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(Capsule().fill(Theme.panelHi))
-    }
-
-    @ViewBuilder private var resultOverlay: some View {
-        if case .won(let stars, let ticks) = session.state {
-            VStack(spacing: 10) {
-                Text("LEVEL COMPLETE").font(Theme.mono(16, .heavy)).foregroundStyle(Theme.accent)
-                StarsView(count: stars, size: 26)
-                Text("\(ticks) ticks  ·  ★★★ at \(session.threeStarTicks) or less")
-                    .font(Theme.mono(11)).foregroundStyle(Theme.dim)
-                HStack(spacing: 8) {
-                    Button("Replay") { session.dismissResult() }
-                        .buttonStyle(PillButtonStyle(filled: false))
-                    if let onNext {
-                        Button("Next ›", action: onNext).buttonStyle(PillButtonStyle())
-                    } else {
-                        Button("Levels", action: onExit).buttonStyle(PillButtonStyle())
-                    }
-                }
+        .overlay(alignment: .bottom) {
+            if case .failed(let message) = session.state {
+                FailBanner(message: message, canReview: session.hasRun,
+                           onReview: { session.seek(session.totalTicks) },
+                           onDismiss: { session.dismissResult() })
+                    .padding(8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .padding(18)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Theme.panel.opacity(0.96)))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.accent.opacity(0.4), lineWidth: 1))
-            .transition(.scale.combined(with: .opacity))
         }
-    }
-
-    @ViewBuilder private var failureBanner: some View {
-        if case .failed(let message) = session.state {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
-                Text(message).font(Theme.mono(11)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button("OK") { session.dismissResult() }.font(Theme.mono(12, .bold)).foregroundStyle(Theme.accent)
-            }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.panel.opacity(0.96)))
-            .padding(8)
-        }
+        .animation(.easeOut(duration: 0.2), value: session.inspected)
+        .clipped()
     }
 
     // MARK: Code side
 
-    private var rightPanel: some View {
-        VStack(spacing: 6) {
-            HStack(alignment: .top, spacing: 6) {
-                Text(showHint ? "Hint: \(session.level.hint)" : session.level.brief)
-                    .font(Theme.mono(11))
-                    .foregroundStyle(showHint ? Theme.gold : Theme.dim)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button { showHint.toggle() } label: {
-                    Image(systemName: showHint ? "lightbulb.fill" : "lightbulb")
-                        .foregroundStyle(Theme.gold)
-                        .font(.system(size: 15))
-                }
-                Menu {
-                    Button(role: .destructive) { session.restoreStarterCode() } label: {
-                        Label("Restore starter code", systemImage: "arrow.uturn.backward")
-                    }
-                    .disabled(session.state.isActive)
-                    Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-                } label: {
-                    Image(systemName: "ellipsis.circle").foregroundStyle(Theme.dim).font(.system(size: 15))
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
-
+    private var codeSide: some View {
+        VStack(spacing: 5) {
             fileBar
-
+            if showHint {
+                Text(level.hint)
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.gold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.gold.opacity(0.1)))
+                    .padding(.horizontal, 6)
+                    .transition(.opacity)
+            }
             CodeEditor(text: Binding(get: { session.fullText }, set: { session.setFullText($0) }),
                        activeLine: session.activeLine,
                        errorLine: session.errorLine,
                        editable: !session.state.isActive,
                        lockedLength: session.lockedLength,
-                       commands: session.level.commands,
+                       commands: level.commands,
+                       names: level.setupNames,
                        jump: jump,
                        fontSize: CGFloat(settings.codeFontSize))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
-            .padding(.horizontal, 6)
-
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
+                .padding(.horizontal, 6)
+            if session.hasRun { timeline }
             controls
-            consoleView
+            BottomPanel(session: session, tab: $panelTab, expanded: $panelExpanded)
         }
+        .padding(.top, 5)
         .background(Theme.panel)
     }
 
     private var fileBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             HStack(spacing: 4) {
-                Image(systemName: "doc.text").font(.system(size: 10, weight: .bold))
+                Image(systemName: "doc.text.fill").font(.system(size: 10, weight: .bold))
                 Text("main.py").font(Theme.mono(12, .bold))
             }
             .foregroundStyle(Theme.text)
-            Spacer()
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Theme.panelHi))
+
             jumpButton("Setup", icon: "lock.fill", line: 1)
             jumpButton("Your code", icon: "pencil", line: session.firstCodeLine)
+            Spacer(minLength: 2)
+            IconButton(symbol: "info", size: 28, tint: Theme.blue) { session.showIntro = true }
+                .accessibilityIdentifier("brief")
+            IconButton(symbol: "book.fill", size: 28, tint: Theme.purple) { showHandbook = true }
+                .accessibilityIdentifier("handbook")
+            IconButton(symbol: showHint ? "lightbulb.fill" : "lightbulb", size: 28, tint: Theme.gold) {
+                withAnimation(.easeOut(duration: 0.15)) { showHint.toggle() }
+            }
+            .accessibilityIdentifier("hint")
+            Menu {
+                Button(role: .destructive) { session.restoreStarterCode() } label: {
+                    Label("Restore starter code", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(session.state.isActive)
+                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Theme.panelHi))
+            }
         }
-        .padding(.horizontal, 10)
-        .onAppear {
-            // First visit: start at the top so the setup gets read. After that, open at your code.
-            let firstVisit = !GameProgress.shared.hasSavedCode(for: session.level)
-            jump = EditorJump(line: firstVisit ? 1 : session.firstCodeLine)
-        }
+        .padding(.horizontal, 8)
     }
 
     private func jumpButton(_ title: String, icon: String, line: Int) -> some View {
@@ -197,64 +183,66 @@ struct GameScreen: View {
                 Text(title).font(Theme.mono(11, .bold))
             }
             .foregroundStyle(Theme.dim)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(Capsule().fill(Theme.panelHi))
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7).stroke(Theme.line, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
+        .accessibilityIdentifier(title)
+    }
+
+    /// Scrub through the recorded run, forwards or backwards.
+    private var timeline: some View {
+        HStack(spacing: 6) {
+            Button { session.stepBack() } label: {
+                Image(systemName: "backward.frame.fill").font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(session.tick > 0 ? Theme.text : Theme.dim.opacity(0.4))
+                    .frame(width: 26, height: 22)
+            }
+            .disabled(session.tick == 0)
+            .accessibilityIdentifier("stepBack")
+            Slider(value: Binding(get: { Double(session.tick) }, set: { session.seek(Int($0.rounded())) }),
+                   in: 0...Double(max(1, session.totalTicks)), step: 1)
+                .tint(tint)
+                .controlSize(.mini)
+            Text("\(session.tick)/\(session.totalTicks)")
+                .font(Theme.mono(10, .bold))
+                .foregroundStyle(Theme.dim)
+                .frame(minWidth: 44, alignment: .trailing)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+    }
+
+    private var runTitle: String {
+        switch session.state {
+        case .running: return "Pause"
+        case .paused: return "Resume"
+        case .compiling: return "Checking…"
+        default: return "Run"
+        }
     }
 
     private var controls: some View {
         HStack(spacing: 6) {
             Button { session.runOrPause() } label: {
-                Label(session.state == .running ? "Pause" : (session.state == .paused ? "Resume" : "Run"),
-                      systemImage: session.state == .running ? "pause.fill" : "play.fill")
+                Label(runTitle, systemImage: session.state == .running ? "pause.fill" : "play.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PillButtonStyle())
+            .buttonStyle(PillButtonStyle(color: tint))
+            .accessibilityIdentifier("Run")
 
             Button { session.step() } label: { Image(systemName: "forward.frame.fill") }
                 .buttonStyle(PillButtonStyle(color: Theme.text, filled: false))
+                .accessibilityIdentifier("step")
 
             Button { session.reset() } label: { Image(systemName: "arrow.counterclockwise") }
                 .buttonStyle(PillButtonStyle(color: Theme.text, filled: false))
+                .accessibilityIdentifier("reset")
 
-            Button { session.cycleSpeed() } label: { Text(session.speedLabel).frame(minWidth: 26) }
+            Button { session.cycleSpeed() } label: { Text(session.speedLabel).frame(minWidth: 28) }
                 .buttonStyle(PillButtonStyle(color: Theme.gold, filled: false))
+                .accessibilityIdentifier("speed")
         }
         .padding(.horizontal, 6)
-    }
-
-    private var consoleView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(session.console) { line in
-                        Text(line.kind == .output ? "› " + line.text : line.text)
-                            .font(Theme.mono(10))
-                            .foregroundStyle(color(for: line.kind))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(line.id)
-                    }
-                }
-                .padding(6)
-            }
-            .frame(height: 58)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.35)))
-            .padding(.horizontal, 6)
-            .padding(.bottom, 6)
-            .onChange(of: session.console.count) { _, _ in
-                if let last = session.console.last { proxy.scrollTo(last.id, anchor: .bottom) }
-            }
-        }
-    }
-
-    private func color(for kind: ConsoleLine.Kind) -> Color {
-        switch kind {
-        case .info: return Theme.dim
-        case .output: return Theme.text
-        case .warning: return Theme.gold
-        case .error: return Theme.danger
-        case .success: return Theme.accent
-        }
     }
 }

@@ -24,6 +24,7 @@ struct WorldInfo: Hashable, Identifiable {
     let blurb: String
     let symbol: String
     let available: Bool
+    var kind: WorldKind? = nil
 
     var levels: [LevelSpec] {
         switch id {
@@ -33,12 +34,15 @@ struct WorldInfo: Hashable, Identifiable {
         }
     }
 
+    static func == (a: WorldInfo, b: WorldInfo) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+
     /// The world a level belongs to.
     static func containing(_ level: LevelSpec) -> WorldInfo? { all.first { $0.levels.contains(level) } }
 
     static let all: [WorldInfo] = [
-        WorldInfo(id: "farm", name: "The Farm", machine: "Farm drone", blurb: "Till, plant, water and harvest from the sky.", symbol: "leaf.fill", available: true),
-        WorldInfo(id: "warehouse", name: "Warehouse", machine: "Forklift bot", blurb: "Pick, scan and ship crates to the right bays.", symbol: "shippingbox.fill", available: true),
+        WorldInfo(id: "farm", name: "The Farm", machine: "Farm drone", blurb: "Till, plant, water and harvest from the sky.", symbol: "leaf.fill", available: true, kind: .farm),
+        WorldInfo(id: "warehouse", name: "Warehouse", machine: "Forklift bot", blurb: "Pick, scan and ship crates to the right bays.", symbol: "shippingbox.fill", available: true, kind: .warehouse),
         WorldInfo(id: "mars", name: "Mars Mine", machine: "Rover", blurb: "Drill ore before your battery dies.", symbol: "globe.americas.fill", available: false),
         WorldInfo(id: "ocean", name: "Deep Ocean", machine: "Submarine", blurb: "Sonar, salvage, and watch your oxygen.", symbol: "water.waves", available: false),
         WorldInfo(id: "rail", name: "Rail Yard", machine: "Switch tower", blurb: "Route trains without a crash.", symbol: "tram.fill", available: false),

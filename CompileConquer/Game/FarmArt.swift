@@ -277,6 +277,114 @@ enum FarmArt {
         }
     }
 
+    // MARK: Other crops
+
+    /// Any crop at a growth stage: 0 = seed, 1 = sprout, 2 = young, 3 = ripe.
+    static func crop(_ kind: CropKind, stage: Int, _ s: CGFloat) -> SKTexture {
+        switch kind {
+        case .wheat: return wheat(stage: stage, s)
+        case .carrot: return carrot(stage: stage, s)
+        case .pumpkin: return pumpkin(stage: stage, s)
+        }
+    }
+
+    private static func seedMound(_ c: CGContext, at p: CGPoint, _ w: CGFloat) {
+        ellipse(c, CGRect(x: p.x - w * 0.075, y: p.y - w * 0.035, width: w * 0.15, height: w * 0.08), rgb(0.33, 0.21, 0.12))
+        ellipse(c, CGRect(x: p.x - w * 0.025, y: p.y - w * 0.055, width: w * 0.05, height: w * 0.05), rgb(0.87, 0.77, 0.52))
+    }
+
+    static func carrot(stage: Int, _ s: CGFloat) -> SKTexture {
+        texture("carrot\(stage)", CGSize(width: s, height: s)) { c, sz in
+            let w = sz.width
+            let spots = [CGPoint(x: 0.3, y: 0.32), CGPoint(x: 0.7, y: 0.32), CGPoint(x: 0.3, y: 0.74), CGPoint(x: 0.7, y: 0.74)]
+            c.setLineCap(.round)
+            for (i, sp) in spots.enumerated() {
+                let p = CGPoint(x: sp.x * w, y: sp.y * w)
+                if stage == 0 { seedMound(c, at: p, w); continue }
+                let reaches: [CGFloat] = [0, 0.07, 0.125, 0.17]
+                let reach = w * reaches[min(3, max(0, stage))]
+                let fronds = stage == 1 ? 3 : (stage == 2 ? 6 : 7)
+                if stage == 3 {
+                    // The orange shoulder of the carrot pushing out of the soil.
+                    ellipse(c, CGRect(x: p.x - w * 0.085, y: p.y - w * 0.085, width: w * 0.17, height: w * 0.17), rgb(0.72, 0.33, 0.05))
+                    ellipse(c, CGRect(x: p.x - w * 0.07, y: p.y - w * 0.07, width: w * 0.14, height: w * 0.14), rgb(0.98, 0.55, 0.13))
+                    ellipse(c, CGRect(x: p.x - w * 0.045, y: p.y - w * 0.055, width: w * 0.05, height: w * 0.035), rgb(1, 0.78, 0.45, 0.8))
+                }
+                for k in 0..<fronds {
+                    let a = CGFloat(k) / CGFloat(fronds) * .pi * 2 + CGFloat(i) * 0.6
+                    let tip = CGPoint(x: p.x + cos(a) * reach, y: p.y + sin(a) * reach * 0.9)
+                    let mid = CGPoint(x: p.x + cos(a + 0.5) * reach * 0.55, y: p.y + sin(a + 0.5) * reach * 0.5)
+                    c.setStrokeColor((k % 2 == 0 ? rgb(0.30, 0.72, 0.28) : rgb(0.42, 0.82, 0.36)).cgColor)
+                    c.setLineWidth(max(1.2, w * (stage == 1 ? 0.022 : 0.03)))
+                    c.move(to: p)
+                    c.addQuadCurve(to: tip, control: mid)
+                    c.strokePath()
+                    if stage >= 2 {
+                        ellipse(c, CGRect(x: tip.x - w * 0.022, y: tip.y - w * 0.022, width: w * 0.044, height: w * 0.044), rgb(0.5, 0.86, 0.42))
+                    }
+                }
+            }
+        }
+    }
+
+    static func pumpkin(stage: Int, _ s: CGFloat) -> SKTexture {
+        texture("pumpkin\(stage)", CGSize(width: s, height: s)) { c, sz in
+            let w = sz.width
+            let p = CGPoint(x: w * 0.5, y: w * 0.56)
+            if stage == 0 { seedMound(c, at: p, w); return }
+
+            func leaf(_ at: CGPoint, _ r: CGFloat, _ angle: CGFloat) {
+                c.saveGState()
+                c.translateBy(x: at.x, y: at.y)
+                c.rotate(by: angle)
+                ellipse(c, CGRect(x: -r, y: -r * 0.72, width: r * 2, height: r * 1.44), rgb(0.22, 0.56, 0.24))
+                ellipse(c, CGRect(x: -r * 0.8, y: -r * 0.6, width: r * 1.3, height: r * 0.9), rgb(0.33, 0.68, 0.32))
+                c.setStrokeColor(rgb(0.16, 0.42, 0.18, 0.8).cgColor)
+                c.setLineWidth(max(0.8, r * 0.1))
+                c.move(to: CGPoint(x: -r * 0.8, y: 0)); c.addLine(to: CGPoint(x: r * 0.8, y: 0)); c.strokePath()
+                c.restoreGState()
+            }
+
+            // Vine
+            c.setStrokeColor(rgb(0.25, 0.52, 0.22).cgColor)
+            c.setLineWidth(max(1.5, w * 0.03))
+            c.setLineCap(.round)
+            c.move(to: CGPoint(x: w * 0.2, y: w * 0.78))
+            c.addCurve(to: CGPoint(x: w * 0.8, y: w * 0.3), control1: CGPoint(x: w * 0.3, y: w * 0.4), control2: CGPoint(x: w * 0.62, y: w * 0.75))
+            if stage >= 2 { c.strokePath() } else { c.beginPath() }
+
+            if stage == 1 {
+                leaf(CGPoint(x: p.x - w * 0.09, y: p.y), w * 0.1, -0.5)
+                leaf(CGPoint(x: p.x + w * 0.09, y: p.y - w * 0.03), w * 0.1, 0.6)
+                return
+            }
+            leaf(CGPoint(x: w * 0.24, y: w * 0.7), w * 0.13, -0.7)
+            leaf(CGPoint(x: w * 0.78, y: w * 0.3), w * 0.13, 0.5)
+            leaf(CGPoint(x: w * 0.7, y: w * 0.78), w * 0.11, 0.2)
+
+            let r = stage == 2 ? w * 0.13 : w * 0.26
+            let body = stage == 2 ? rgb(0.45, 0.68, 0.22) : rgb(0.96, 0.52, 0.1)
+            let dark = stage == 2 ? rgb(0.3, 0.5, 0.15) : rgb(0.76, 0.34, 0.04)
+            let lite = stage == 2 ? rgb(0.6, 0.8, 0.35) : rgb(1, 0.68, 0.25)
+            // Shadow, then ribs drawn as overlapping ovals.
+            ellipse(c, CGRect(x: p.x - r * 0.95, y: p.y - r * 0.55, width: r * 2.1, height: r * 1.6), rgb(0, 0, 0, 0.28))
+            ellipse(c, CGRect(x: p.x - r, y: p.y - r * 0.85, width: r * 2, height: r * 1.7), dark)
+            for (dx, col) in [(-0.55, body), (0.55, body), (-0.28, lite), (0.28, lite), (0.0, body)] {
+                let cx = p.x + r * CGFloat(dx)
+                ellipse(c, CGRect(x: cx - r * 0.42, y: p.y - r * 0.8, width: r * 0.84, height: r * 1.6), col)
+            }
+            c.setStrokeColor(dark.withAlphaComponent(0.55).cgColor)
+            c.setLineWidth(max(0.8, r * 0.05))
+            for dx in [-0.42, 0.0, 0.42] {
+                let cx = p.x + r * CGFloat(dx)
+                c.strokeEllipse(in: CGRect(x: cx - r * 0.3, y: p.y - r * 0.78, width: r * 0.6, height: r * 1.56))
+            }
+            ellipse(c, CGRect(x: p.x - r * 0.5, y: p.y - r * 0.6, width: r * 0.45, height: r * 0.3), rgb(1, 1, 1, 0.3))
+            // Stem
+            ellipse(c, CGRect(x: p.x - r * 0.14, y: p.y - r * 0.2, width: r * 0.28, height: r * 0.26), rgb(0.3, 0.42, 0.16))
+        }
+    }
+
     // MARK: Surroundings
 
     static func fencePost(_ s: CGFloat) -> SKTexture {

@@ -9,7 +9,12 @@ final class AppSettings: ObservableObject {
     @Published var codeFontSize: Double { didSet { d.set(codeFontSize, forKey: "set.font") } }
     @Published var defaultSpeed: Int { didSet { d.set(defaultSpeed, forKey: "set.speed") } }
     @Published var showCropAges: Bool { didSet { d.set(showCropAges, forKey: "set.cropAges") } }
+    @Published var showCoords: Bool { didSet { d.set(showCoords, forKey: "set.coords") } }
     @Published var haptics: Bool { didSet { d.set(haptics, forKey: "set.haptics") } }
+    @Published var soundOn: Bool { didSet { d.set(soundOn, forKey: "set.sound"); SoundFX.shared.settingsChanged() } }
+    @Published var soundVolume: Double { didSet { d.set(soundVolume, forKey: "set.soundVol"); SoundFX.shared.settingsChanged() } }
+    @Published var musicOn: Bool { didSet { d.set(musicOn, forKey: "set.music"); SoundFX.shared.settingsChanged() } }
+    @Published var musicVolume: Double { didSet { d.set(musicVolume, forKey: "set.musicVol"); SoundFX.shared.settingsChanged() } }
 
     /// Owner tools: hidden until unlocked with the owner code.
     @Published var ownerUnlocked: Bool { didSet { d.set(ownerUnlocked, forKey: "owner.unlocked") } }
@@ -22,7 +27,12 @@ final class AppSettings: ObservableObject {
         codeFontSize = ud.object(forKey: "set.font") as? Double ?? 13
         defaultSpeed = ud.object(forKey: "set.speed") as? Int ?? 1
         showCropAges = ud.object(forKey: "set.cropAges") as? Bool ?? true
+        showCoords = ud.object(forKey: "set.coords") as? Bool ?? true
         haptics = ud.object(forKey: "set.haptics") as? Bool ?? true
+        soundOn = ud.object(forKey: "set.sound") as? Bool ?? true
+        soundVolume = ud.object(forKey: "set.soundVol") as? Double ?? 0.8
+        musicOn = ud.object(forKey: "set.music") as? Bool ?? true
+        musicVolume = ud.object(forKey: "set.musicVol") as? Double ?? 0.5
         ownerUnlocked = ud.bool(forKey: "owner.unlocked")
         playAnyCampaign = ud.bool(forKey: "owner.anyCampaign")
     }

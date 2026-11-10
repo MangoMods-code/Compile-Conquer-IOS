@@ -4,13 +4,25 @@ enum Ground: Codable {
     case grass, soil, rock, water
 
     var walkable: Bool { self == .grass || self == .soil }
+
+    /// The name Python code sees in tile.ground.
+    var name: String {
+        switch self {
+        case .grass: return "grass"
+        case .soil: return "soil"
+        case .rock: return "rock"
+        case .water: return "water"
+        }
+    }
 }
 
 enum CropKind: String, Codable, CaseIterable {
     case wheat = "Wheat"
+    case carrot = "Carrot"
+    case pumpkin = "Pumpkin"
 }
 
-struct Crop: Codable {
+struct Crop: Codable, Equatable {
     var kind: CropKind
     var growth: Int = 0
     var growTime: Int
@@ -18,6 +30,8 @@ struct Crop: Codable {
     var ripe: Bool { growth >= growTime }
     /// 0...1 for drawing.
     var progress: Double { min(1, Double(growth) / Double(max(1, growTime))) }
+    /// 0 = seed, 1 = sprout, 2 = young, 3 = ripe.
+    var stage: Int { ripe ? 3 : min(2, Int(progress * 3)) }
 }
 
 struct Tile: Codable {
@@ -34,17 +48,6 @@ enum DroneCommand: Equatable {
     case water
     case harvest
     case wait
-
-    var name: String {
-        switch self {
-        case .move: return "move"
-        case .till: return "till"
-        case .plant: return "plant"
-        case .water: return "water"
-        case .harvest: return "harvest"
-        case .wait: return "wait"
-        }
-    }
 }
 
 /// What happened when a command ran, for the map animation and the console.
@@ -64,25 +67,40 @@ struct FarmWorld {
     private(set) var facing: Direction = .north
     private(set) var inventory: [CropKind: Int] = [:]
     private(set) var ticks = 0
-    let growTime: Int
+    /// Unripe crops that were harvested (and so wasted).
+    private(set) var lost = 0
+    /// Ticks each crop needs to ripen on this level.
+    let growTimes: [CropKind: Int]
 
-    init(width: Int, height: Int, ground: Ground = .grass, drone: Pos, growTime: Int) {
+    init(width: Int, height: Int, ground: Ground = .grass, drone: Pos, growTimes: [CropKind: Int]) {
         self.width = width
         self.height = height
         self.tiles = Array(repeating: Tile(ground: ground), count: width * height)
         self.drone = drone
-        self.growTime = growTime
+        self.growTimes = growTimes
     }
 
     func inBounds(_ p: Pos) -> Bool { p.x >= 0 && p.y >= 0 && p.x < width && p.y < height }
-
     func tile(at p: Pos) -> Tile { tiles[p.y * width + p.x] }
+    func isOpen(_ p: Pos) -> Bool { inBounds(p) && tile(at: p).ground.walkable }
+    func count(of kind: CropKind) -> Int { inventory[kind, default: 0] }
+    func growTime(_ kind: CropKind) -> Int { growTimes[kind] ?? 3 }
 
-    mutating func setGround(_ g: Ground, at p: Pos) {
-        tiles[p.y * width + p.x].ground = g
+    var allPositions: [Pos] {
+        var out: [Pos] = []
+        out.reserveCapacity(width * height)
+        for y in 0..<height { for x in 0..<width { out.append(Pos(x: x, y: y)) } }
+        return out
     }
 
-    func count(of kind: CropKind) -> Int { inventory[kind, default: 0] }
+    /// Progress toward a set of goals: each crop counts up to its target.
+    func progress(_ goals: [CropGoal]) -> Int {
+        goals.reduce(0) { $0 + min(count(of: $1.kind), $1.count) }
+    }
+
+    // Used by the level generator.
+    mutating func setGround(_ g: Ground, at p: Pos) { tiles[p.y * width + p.x].ground = g }
+    mutating func setCrop(_ c: Crop?, at p: Pos) { tiles[p.y * width + p.x].crop = c }
 
     /// Runs one command, then lets one tick of time pass (crops grow, water dries).
     mutating func perform(_ command: DroneCommand) -> CommandOutcome {
@@ -97,10 +115,10 @@ struct FarmWorld {
         case .move(let dir):
             facing = dir
             let next = drone.moved(dir)
-            guard inBounds(next) else { return .bumped("The drone hit the edge of the field going \(dir.rawValue).") }
+            guard inBounds(next) else { return .bumped("The drone hit the fence going \(dir.rawValue).") }
             let g = tile(at: next).ground
             guard g.walkable else {
-                return .bumped(g == .rock ? "A rock blocks the way \(dir.rawValue)." : "Water blocks the way \(dir.rawValue).")
+                return .bumped(g == .rock ? "A rock blocks the way \(dir.rawValue)." : "A pond blocks the way \(dir.rawValue).")
             }
             drone = next
             return .ok(note: nil)
@@ -111,15 +129,15 @@ struct FarmWorld {
                 tiles[i].ground = .soil
                 return .ok(note: nil)
             case .soil:
-                return .warning("This tile is already soil.")
+                return .warning("This tile is already soil, so till() changed nothing.")
             default:
                 return .warning("Can't till here.")
             }
 
         case .plant(let kind):
-            guard tiles[i].ground == .soil else { return .warning("plant() needs soil. Use till() on grass first.") }
-            guard tiles[i].crop == nil else { return .warning("Something is already planted here.") }
-            tiles[i].crop = Crop(kind: kind, growTime: growTime)
+            guard tiles[i].ground == .soil else { return .warning("tile.ground is \"grass\" here. plant() needs soil: till() first.") }
+            guard tiles[i].crop == nil else { return .warning("tile.crop isn't None: something is already planted here.") }
+            tiles[i].crop = Crop(kind: kind, growTime: growTime(kind))
             return .ok(note: nil)
 
         case .water:
@@ -131,7 +149,8 @@ struct FarmWorld {
             guard let crop = tiles[i].crop else { return .warning("tile.crop is None here, so there was nothing to harvest.") }
             tiles[i].crop = nil
             guard crop.ripe else {
-                return .warning("Unripe! crop.age was \(crop.growth) but GROW_TIME is \(crop.growTime), so the wheat was lost.")
+                lost += 1
+                return .warning("Unripe! crop.age was \(crop.growth) but it needs \(crop.growTime), so the \(crop.kind.rawValue.lowercased()) was lost.")
             }
             inventory[crop.kind, default: 0] += 1
             return .ok(note: "+1 \(crop.kind.rawValue)")
@@ -145,8 +164,9 @@ struct FarmWorld {
         ticks += 1
         for i in tiles.indices {
             let wet = tiles[i].wetTicks > 0
-            if tiles[i].crop != nil, !(tiles[i].crop!.ripe) {
-                tiles[i].crop!.growth += wet ? 2 : 1
+            if var crop = tiles[i].crop, !crop.ripe {
+                crop.growth += wet ? 2 : 1
+                tiles[i].crop = crop
             }
             if wet { tiles[i].wetTicks -= 1 }
         }

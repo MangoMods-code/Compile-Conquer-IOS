@@ -15,6 +15,19 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    section("Sound") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            toggle("Sound effects", $settings.soundOn)
+                            if settings.soundOn {
+                                volume("Effects volume", $settings.soundVolume) { SoundFX.shared.play(.harvest) }
+                            }
+                            toggle("Music", $settings.musicOn)
+                            if settings.musicOn {
+                                volume("Music volume", $settings.musicVolume) {}
+                            }
+                        }
+                    }
+
                     section("Editor") {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -25,7 +38,7 @@ struct SettingsView: View {
                             Slider(value: $settings.codeFontSize, in: 10...20, step: 1)
                             Text("move(North)  # preview")
                                 .font(.system(size: settings.codeFontSize, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.4, green: 0.75, blue: 1))
+                                .foregroundStyle(Theme.blue)
                                 .padding(8)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.35)))
@@ -44,8 +57,9 @@ struct SettingsView: View {
                         }
                     }
 
-                    section("Display & feel") {
+                    section("Map & feel") {
                         VStack(spacing: 10) {
+                            toggle("Show x and y numbers around the map", $settings.showCoords)
                             toggle("Show crop age tags on the Farm", $settings.showCropAges)
                             toggle("Haptics", $settings.haptics)
                         }
@@ -127,8 +141,7 @@ struct SettingsView: View {
             content()
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line, lineWidth: 1))
+                .card(radius: 14)
         }
     }
 
@@ -137,5 +150,15 @@ struct SettingsView: View {
             Text(title).font(Theme.mono(13)).foregroundStyle(Theme.text)
         }
         .tint(Theme.accent)
+    }
+
+    private func volume(_ title: String, _ value: Binding<Double>, onChange: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill").font(.system(size: 11)).foregroundStyle(Theme.dim)
+            Slider(value: value, in: 0...1, onEditingChanged: { editing in if !editing { onChange() } })
+                .tint(Theme.accent)
+                .accessibilityLabel(title)
+            Image(systemName: "speaker.wave.3.fill").font(.system(size: 11)).foregroundStyle(Theme.dim)
+        }
     }
 }

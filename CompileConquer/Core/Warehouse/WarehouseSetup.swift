@@ -53,7 +53,13 @@ enum WarehouseSetup {
 
             """
         }
-        if p?.reshuffleEachRun == true {
+        if p?.rerollPositions == true {
+            s += """
+            # The crates land somewhere new every
+            # time you press Run.
+
+            """
+        } else if p?.rerollColors == true {
             s += """
             # The colors are re-rolled every time
             # you press Run.
@@ -128,17 +134,19 @@ enum WarehouseSetup {
         "drop": """
         def drop():
             # Put the carried crate down here.
+            global shipped
             crate = loader.carrying
-            bay = floor.bay_at(loader.x, loader.y)
+            x = loader.x
+            y = loader.y
+            bay = floor.bay_at(x, y)
             if crate is not None:
                 if bay is not None:
                     # A bay only takes its color.
                     if bay.color == crate.color:
                         shipped += 1
                         loader.carrying = None
-                elif floor.crate_at(loader.x,
-                                    loader.y) is None:
-                    floor.put(crate, loader.x, loader.y)
+                elif floor.crate_at(x, y) is None:
+                    floor.put(crate, x, y)
                     loader.carrying = None
             tick()
         """,
