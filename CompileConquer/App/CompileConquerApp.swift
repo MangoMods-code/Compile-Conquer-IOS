@@ -21,7 +21,15 @@ enum Route: Hashable {
 }
 
 struct RootView: View {
-    @State private var path: [Route] = []
+    @State private var path: [Route] = RootView.startPath()
+
+    /// UI tests can jump straight into a level with `-uitest.open <level id>`.
+    private static func startPath() -> [Route] {
+        guard let id = UserDefaults.standard.string(forKey: "uitest.open"),
+              let level = WorldInfo.all.flatMap({ $0.levels }).first(where: { $0.id == id }),
+              let world = WorldInfo.containing(level) else { return [] }
+        return [.worlds, .levels(world), .play(level)]
+    }
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {

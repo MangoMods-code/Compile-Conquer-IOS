@@ -96,6 +96,7 @@ final class GameSession: ObservableObject {
     private var ending: SimEnding = .finished
     private var runTask: Task<Void, Never>?
     private var simTask: Task<Void, Never>?
+    private var finishTask: Task<Void, Never>?
 
     init(level: LevelSpec) {
         self.level = level
@@ -209,6 +210,7 @@ final class GameSession: ObservableObject {
     func seek(_ k: Int) {
         guard hasRun, state != .compiling else { return }
         runTask?.cancel()
+        finishTask?.cancel()
         let target = min(max(0, k), totalTicks)
         if target == 0 {
             world = startWorld
@@ -234,6 +236,7 @@ final class GameSession: ObservableObject {
     func reset() {
         runTask?.cancel()
         simTask?.cancel()
+        finishTask?.cancel()
         trace = []
         tickIndex = []
         stepLines = []
@@ -281,6 +284,7 @@ final class GameSession: ObservableObject {
     func stop() {
         runTask?.cancel()
         simTask?.cancel()
+        finishTask?.cancel()
     }
 
     // MARK: Inspecting tiles
@@ -410,10 +414,22 @@ final class GameSession: ObservableObject {
                 newLines += stepLines[cursor]
                 cursor += 1
             }
-            if cursor >= trace.count { finish() }
+            if cursor >= trace.count { finishSoon() }
             return
         }
         finish()
+    }
+
+    /// Lets the last command's animation play before the result appears.
+    private func finishSoon() {
+        runTask?.cancel()
+        finishTask?.cancel()
+        let delay = UInt64(min(0.7, tickDuration + 0.25) * 1_000_000_000)
+        finishTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.finish()
+        }
     }
 
     private func playSound(for action: WorldAction, _ outcome: CommandOutcome) {
@@ -451,6 +467,8 @@ final class GameSession: ObservableObject {
 
     private func finish() {
         runTask?.cancel()
+        finishTask?.cancel()
+        finishTask = nil
         activeLine = nil
         switch ending {
         case .goal:
