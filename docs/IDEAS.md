@@ -55,3 +55,19 @@ A running list of ideas. Nothing here is in the game until it's picked and built
 - **Daily seed:** everyone gets the same map that day, with a leaderboard by ticks and by lines of code.
 - **Efficiency bonuses:** fewest lines, no wasted ticks (no bumps, no lost crops).
 - **Replays:** replaying a level on a new random seed with your existing code ("does your code generalize?").
+
+## Added during the big rework (still ideas, nothing built)
+
+- **Things already in the game that currencies could hook into later:**
+  - stars
+  - the Tidy bonus (solve in N lines or fewer)
+  - operator ranks from total stars
+- **More cosmetics:**
+  - Sound packs: retro chiptune effects, soft marimba effects, a different music loop per world.
+  - Trail styles for the route a machine leaves on the map: dotted, glowing, paw prints, tire tracks.
+  - Win-card confetti styles and star shapes.
+  - Level-map themes: a parchment map, a neon grid.
+- **More ways to earn Bits:**
+  - **Daily map:** one shared seed per day per world, with best ticks and fewest lines shown.
+  - **"Explain it" challenges:** a finished program is shown and the player predicts a variable's final value; a right answer earns a few Bits.
+  - **Ghost run:** race your own best run of a level, shown as a faded machine.

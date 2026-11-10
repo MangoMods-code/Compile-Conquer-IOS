@@ -402,7 +402,9 @@ enum LevelGenerator {
                 let g = w.growTime(.wheat)
                 w.setCrop(Crop(kind: .wheat, growth: g, growTime: g), at: Pos(x: x, y: y))
             } else {
-                w.setCrop(Crop(kind: .pumpkin, growth: 2, growTime: w.growTime(.pumpkin)), at: Pos(x: x, y: y))
+                // Well on their way, but nowhere near ripe.
+                let g = w.growTime(.pumpkin)
+                w.setCrop(Crop(kind: .pumpkin, growth: g * 45 / 100, growTime: g), at: Pos(x: x, y: y))
             }
         }
     }

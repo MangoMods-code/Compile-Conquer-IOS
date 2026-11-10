@@ -35,6 +35,8 @@ struct GameScreen: View {
                 Rectangle().fill(Color.black.opacity(0.5)).frame(width: 1)
                 codeSide
             }
+            .onAppear { session.setLeadingInset(geo.safeAreaInsets.leading) }
+            .onChange(of: geo.safeAreaInsets.leading) { _, inset in session.setLeadingInset(inset) }
         }
         .background(
             HStack(spacing: 0) {
@@ -80,7 +82,9 @@ struct GameScreen: View {
 
     private var mapSide: some View {
         ZStack(alignment: .top) {
+            // The map's surroundings run out under the notch and the home bar.
             SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
+                .ignoresSafeArea(edges: [.leading, .bottom])
             LevelHUD(session: session, tint: tint, onExit: onExit)
         }
         .overlay(alignment: .bottomLeading) {
@@ -100,7 +104,6 @@ struct GameScreen: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: session.inspected)
-        .clipped()
     }
 
     // MARK: Code side

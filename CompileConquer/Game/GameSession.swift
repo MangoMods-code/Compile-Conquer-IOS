@@ -38,6 +38,7 @@ struct ConsoleLine: Identifiable {
 protocol WorldRenderer: AnyObject {
     var onTapTile: ((Pos) -> Void)? { get set }
     var topInset: CGFloat { get set }
+    var leadingInset: CGFloat { get set }
     func load(_ state: WorldState)
     func apply(_ state: WorldState, action: WorldAction, outcome: CommandOutcome, duration: TimeInterval)
     func highlight(_ p: Pos?)
@@ -155,6 +156,7 @@ final class GameSession: ObservableObject {
     var firstCodeLine: Int { headerLines + 1 }
 
     func setTopInset(_ inset: CGFloat) { renderer.topInset = inset }
+    func setLeadingInset(_ inset: CGFloat) { renderer.leadingInset = inset }
 
     // MARK: Controls
 

@@ -25,6 +25,10 @@ final class WarehouseScene: SKScene, WorldRenderer {
     var topInset: CGFloat = 0 {
         didSet { if oldValue != topInset, let w = world { rebuild(w) } }
     }
+    /// Space on the left hidden by the notch; the map is centered in what's left.
+    var leadingInset: CGFloat = 0 {
+        didSet { if oldValue != leadingInset, let w = world { rebuild(w) } }
+    }
 
     override init(size: CGSize) {
         super.init(size: size)
@@ -121,8 +125,9 @@ final class WarehouseScene: SKScene, WorldRenderer {
 
         let margin = max(28, min(size.width, size.height) * 0.11)
         let usableHeight = size.height - topInset
-        tileSize = max(12, floor(min((size.width - margin * 2) / CGFloat(w.width), (usableHeight - margin * 2) / CGFloat(w.height))))
-        origin = CGPoint(x: ((size.width - tileSize * CGFloat(w.width)) / 2).rounded(),
+        let usableWidth = size.width - leadingInset
+        tileSize = max(12, floor(min((usableWidth - margin * 2) / CGFloat(w.width), (usableHeight - margin * 2) / CGFloat(w.height))))
+        origin = CGPoint(x: (leadingInset + (usableWidth - tileSize * CGFloat(w.width)) / 2).rounded(),
                          y: ((usableHeight - tileSize * CGFloat(w.height)) / 2).rounded())
         if builtSize != size { WarehouseArt.clearCache(); builtSize = size }
 
