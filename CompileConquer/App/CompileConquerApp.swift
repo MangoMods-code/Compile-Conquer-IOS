@@ -22,6 +22,7 @@ enum Route: Hashable {
 
 struct RootView: View {
     @State private var path: [Route] = []
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -40,6 +41,10 @@ struct RootView: View {
             }
         }
         .tint(Theme.accent)
+        .onChange(of: scenePhase) { _, phase in
+            // Pick the music back up when the app returns to the front.
+            if phase == .active { SoundFX.shared.settingsChanged() }
+        }
     }
 
     @ViewBuilder private func destination(_ route: Route) -> some View {

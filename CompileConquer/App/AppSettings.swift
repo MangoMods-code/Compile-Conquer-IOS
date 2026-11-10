@@ -24,7 +24,7 @@ final class AppSettings: ObservableObject {
 
     private init() {
         let ud = UserDefaults.standard
-        codeFontSize = ud.object(forKey: "set.font") as? Double ?? 13
+        codeFontSize = ud.object(forKey: "set.font") as? Double ?? 12
         defaultSpeed = ud.object(forKey: "set.speed") as? Int ?? 1
         showCropAges = ud.object(forKey: "set.cropAges") as? Bool ?? true
         showCoords = ud.object(forKey: "set.coords") as? Bool ?? true

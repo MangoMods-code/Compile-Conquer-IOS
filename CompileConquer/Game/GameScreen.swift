@@ -31,7 +31,7 @@ struct GameScreen: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 mapSide
-                    .frame(width: geo.size.width * 0.47)
+                    .frame(width: geo.size.width * 0.45)
                 Rectangle().fill(Color.black.opacity(0.5)).frame(width: 1)
                 codeSide
             }

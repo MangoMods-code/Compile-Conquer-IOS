@@ -36,8 +36,9 @@ final class FlowTests: XCTestCase {
         // Bring it on screen if it's off to one side of a scrolling row.
         var tries = 0
         let width = app.windows.firstMatch.frame.width
-        while !b.isHittable, tries < 12 {
+        while b.frame.midX < 30 || b.frame.midX > width - 30, tries < 12 {
             if b.frame.midX > width * 0.5 { app.swipeLeft(velocity: .slow) } else { app.swipeRight(velocity: .slow) }
+            usleep(400_000)
             tries += 1
         }
         b.tap()

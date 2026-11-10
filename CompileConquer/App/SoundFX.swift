@@ -99,7 +99,11 @@ final class SoundFX {
         let s = AppSettings.shared
         let target: Track? = (s.musicOn && s.musicVolume > 0.01) ? track : nil
         if target == currentTrack {
-            if let t = target { music[t]?.setVolume(musicLevel, fadeDuration: 0.3) }
+            if let t = target, let p = music[t] {
+                // Coming back from the background, the player may have been stopped.
+                if !p.isPlaying { p.play() }
+                p.setVolume(musicLevel, fadeDuration: 0.3)
+            }
             return
         }
         if let old = currentTrack, let p = music[old] {

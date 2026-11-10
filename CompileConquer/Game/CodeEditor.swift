@@ -23,7 +23,7 @@ struct CodeEditor: UIViewRepresentable {
     /// Other names the setup creates (variables, directions...), for autocomplete.
     var names: [String] = []
     var jump: EditorJump? = nil
-    var fontSize: CGFloat = 13
+    var fontSize: CGFloat = 12
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
